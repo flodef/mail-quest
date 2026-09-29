@@ -22,9 +22,16 @@ export interface InboxItem {
   account: string;
   uid: number;
   from: string;
+  fromEmail: string;
   subject: string;
   date: string | null;
   unread: boolean;
+}
+
+export interface InboxFull extends InboxItem {
+  to: string;
+  html: string | null;
+  text: string | null;
 }
 
 async function withClient<T>(acc: MailAccount, fn: (c: ImapFlow) => Promise<T>): Promise<T> {
@@ -158,6 +165,7 @@ export async function inboxStats(acc: MailAccount): Promise<{ unseen: number; to
             account: acc.id,
             uid: msg.uid,
             from: (env?.from ?? []).map((a) => a.name ?? a.address ?? "").filter(Boolean).join(", "),
+            fromEmail: (env?.from ?? []).map((a) => a.address ?? "").filter(Boolean).join(", ").toLowerCase(),
             subject: env?.subject ?? "(sans sujet)",
             date: iso(env?.date),
             unread: !(msg.flags?.has("\\Seen") ?? false),
@@ -168,5 +176,90 @@ export async function inboxStats(acc: MailAccount): Promise<{ unseen: number; to
     } finally {
       lock.release();
     }
+  });
+}
+
+async function downloadRaw(client: ImapFlow, uid: number): Promise<Buffer | null> {
+  const raw = await client.download(String(uid), undefined, { uid: true });
+  if (!raw?.content) return null;
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    raw.content!.on("data", (c: Buffer) => chunks.push(c));
+    raw.content!.on("end", () => resolve(Buffer.concat(chunks)));
+    raw.content!.on("error", reject);
+  });
+}
+
+export async function getMessage(acc: MailAccount, uid: number): Promise<InboxFull | null> {
+  return withClient(acc, async (client) => {
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const buf = await downloadRaw(client, uid);
+      if (!buf) return null;
+      const parsed: ParsedMail = await simpleParser(buf);
+      const addr = (v: ParsedMail["to"]) =>
+        v ? (Array.isArray(v) ? v : [v]).flatMap((t) => t.value.map((a) => a.address ?? "")).join(", ") : "";
+      return {
+        account: acc.id,
+        uid,
+        from: addr(parsed.from) || (parsed.from?.text ?? ""),
+        fromEmail: addr(parsed.from).toLowerCase(),
+        to: addr(parsed.to),
+        subject: parsed.subject ?? "(sans sujet)",
+        date: iso(parsed.date),
+        unread: false,
+        html: typeof parsed.html === "string" ? parsed.html : null,
+        text: parsed.text ?? null,
+      };
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+export async function deleteMessage(acc: MailAccount, uid: number): Promise<void> {
+  await withClient(acc, async (client) => {
+    const trash = await trashMailbox(client);
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      await client.messageMove(String(uid), trash, { uid: true });
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+export async function deleteFromSender(acc: MailAccount, senderEmail: string): Promise<number> {
+  return withClient(acc, async (client) => {
+    const trash = await trashMailbox(client);
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const uids = await client.search({ from: senderEmail }, { uid: true });
+      const list = Array.isArray(uids) ? uids : [];
+      if (list.length > 0) {
+        await client.messageMove(list.join(","), trash, { uid: true });
+      }
+      return list.length;
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+export async function createReplyDraft(acc: MailAccount, to: string, subject: string, body: string, inReplyTo?: string): Promise<void> {
+  await withClient(acc, async (client) => {
+    const box = await draftsMailbox(client);
+    const re = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+    const headers = [
+      `From: ${acc.smtp.from}`,
+      `To: ${to}`,
+      `Subject: ${re}`,
+      `Date: ${new Date().toUTCString()}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/plain; charset=utf-8`,
+      ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`, `References: ${inReplyTo}`] : []),
+    ];
+    const raw = headers.join("\r\n") + "\r\n\r\n" + body.replace(/\n/g, "\r\n");
+    await client.append(box, raw, ["\\Draft"]);
   });
 }

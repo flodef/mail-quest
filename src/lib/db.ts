@@ -10,6 +10,8 @@ function sql() {
   return neon(url);
 }
 
+let inited = false;
+
 export async function initDb(): Promise<void> {
   const q = sql();
   await q`CREATE TABLE IF NOT EXISTS push_subs (
@@ -28,6 +30,17 @@ export async function initDb(): Promise<void> {
     unseen INTEGER NOT NULL,
     checked_at TIMESTAMPTZ DEFAULT now()
   )`;
+  await q`CREATE TABLE IF NOT EXISTS muted_senders (
+    account TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (account, sender)
+  )`;
+  inited = true;
+}
+
+async function ensureDb(): Promise<void> {
+  if (!inited) await initDb();
 }
 
 export async function addAside(account: string, uid: number): Promise<void> {
@@ -39,8 +52,25 @@ export async function removeAside(account: string, uid: number): Promise<void> {
 }
 
 export async function listAsides(): Promise<{ account: string; uid: number }[]> {
+  await ensureDb();
   const rows = await sql()`SELECT account, uid FROM asides`;
   return rows as unknown as { account: string; uid: number }[];
+}
+
+export async function addMuted(account: string, sender: string): Promise<void> {
+  await ensureDb();
+  await sql()`INSERT INTO muted_senders (account, sender) VALUES (${account}, ${sender.toLowerCase()}) ON CONFLICT DO NOTHING`;
+}
+
+export async function removeMuted(account: string, sender: string): Promise<void> {
+  await ensureDb();
+  await sql()`DELETE FROM muted_senders WHERE account=${account} AND sender=${sender.toLowerCase()}`;
+}
+
+export async function listMuted(): Promise<{ account: string; sender: string }[]> {
+  await ensureDb();
+  const rows = await sql()`SELECT account, sender FROM muted_senders`;
+  return rows as unknown as { account: string; sender: string }[];
 }
 
 export async function addPushSub(endpoint: string, keys: unknown): Promise<void> {
