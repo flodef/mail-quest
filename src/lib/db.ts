@@ -186,3 +186,7 @@ export async function addNote(title: string, body: string): Promise<Note> {
 export async function deleteNote(id: string): Promise<void> {
   await sql()`DELETE FROM notes WHERE id=${id}`;
 }
+
+export async function updateNote(id: string, body: string): Promise<void> {
+  await sql()`UPDATE notes SET body=${body} WHERE id=${id}`;
+}

@@ -63,6 +63,48 @@ export default function Game() {
     return () => clearTimeout(id);
   }, [refresh]);
 
+  // Badge compteur : onglet navigateur (favicon overlay) + PWA installée (Badging API)
+  useEffect(() => {
+    const n = pile.length;
+    const nav = navigator as Navigator & {
+      setAppBadge?: (n: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    if (n > 0) void nav.setAppBadge?.(n).catch(() => {});
+    else void nav.clearAppBadge?.().catch(() => {});
+
+    const img = new Image();
+    img.src = "/icon-192.png";
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0, 64, 64);
+      if (n > 0) {
+        const txt = n > 99 ? "99+" : String(n);
+        const r = txt.length > 1 ? 20 : 16;
+        ctx.fillStyle = "#b03a2e";
+        ctx.beginPath();
+        ctx.arc(64 - r - 1, r + 1, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = `bold ${txt.length > 2 ? 17 : txt.length > 1 ? 20 : 26}px monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(txt, 64 - r - 1, r + 2);
+      }
+      let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.appendChild(link);
+      }
+      link.href = c.toDataURL("image/png");
+    };
+  }, [pile.length]);
+
   // Enregistre le SW dès le chargement (installabilité PWA + push), puis lit l'abonnement
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -308,6 +350,11 @@ export default function Game() {
     void fetch(`/api/notes?id=${id}`, { method: "DELETE" });
   }
 
+  function noteUpdate(id: string, body: string) {
+    setNotes((ns) => ns.map((n) => (n.id === id ? { ...n, body } : n)));
+    void fetch("/api/notes", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, body }) });
+  }
+
   const clearJar = () => setConfirm({
     label: `Briser la jarre ? Les ${aside.length} missive(s) fileront à la potence.`,
     run: doClearJar,
@@ -465,6 +512,7 @@ export default function Game() {
           onClose={() => setShowNotes(false)}
           onAdd={(b) => void noteAdd(b)}
           onDelete={noteDelete}
+          onUpdate={noteUpdate}
         />
       )}
 

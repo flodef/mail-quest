@@ -1,66 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Reorder, motion, useMotionValue, useTransform, useDragControls, type PanInfo } from "framer-motion";
-import { IconGripVertical, IconPlus, IconSkull, IconX } from "@tabler/icons-react";
+import { Reorder } from "framer-motion";
+import { IconPlus, IconSkull, IconX } from "@tabler/icons-react";
+import ItemRow from "@/components/ItemRow";
 import type { Task } from "@/lib/db";
 
-const SWIPE_X = 90;
 const VISIBLE = 5;
-
-function QuestRow({
-  task,
-  onDone,
-  onBottom,
-}: {
-  task: Task;
-  onDone: () => void;
-  onBottom: () => void;
-}) {
-  const controls = useDragControls();
-  const x = useMotionValue(0);
-  const doneOpacity = useTransform(x, [20, SWIPE_X], [0, 1]);
-  const bottomOpacity = useTransform(x, [-SWIPE_X, -20], [1, 0]);
-
-  function onDragEnd(_: unknown, info: PanInfo) {
-    if (info.offset.x > SWIPE_X) onDone();
-    else if (info.offset.x < -SWIPE_X) onBottom();
-  }
-
-  return (
-    <Reorder.Item value={task} dragListener={false} dragControls={controls} className="relative">
-      <motion.div
-        className="absolute top-1.5 left-1.5 font-pixel text-[8px] px-1.5 py-0.5 border-2 border-[var(--link-green)] text-[var(--link-green)] bg-[#e8ffe8] pointer-events-none z-10"
-        style={{ opacity: doneOpacity }}
-      >
-        ⚔ QUÊTE FAITE
-      </motion.div>
-      <motion.div
-        className="absolute top-1.5 right-1.5 font-pixel text-[8px] px-1.5 py-0.5 border-2 border-[var(--gold-bright)] text-[var(--gold-bright)] bg-[#fff8dc] pointer-events-none z-10"
-        style={{ opacity: bottomOpacity }}
-      >
-        ⇣ FOND DE PILE
-      </motion.div>
-      <motion.div
-        drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={0.6}
-        onDragEnd={onDragEnd}
-        style={{ x }}
-        className="flex items-center gap-2 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a] select-none"
-      >
-        <button
-          className="shrink-0 opacity-50 cursor-grab active:cursor-grabbing touch-none"
-          onPointerDown={(e) => controls.start(e)}
-          aria-label="Réordonner"
-        >
-          <IconGripVertical size={18} />
-        </button>
-        <div className="flex-1 min-w-0 text-lg leading-snug break-words">{task.text}</div>
-      </motion.div>
-    </Reorder.Item>
-  );
-}
 
 export default function QuestPanel({
   tasks,
@@ -119,7 +65,7 @@ export default function QuestPanel({
 
         <Reorder.Group axis="y" values={visible} onReorder={handleReorder} className="flex flex-col gap-2">
           {visible.map((t) => (
-            <QuestRow key={t.id} task={t} onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
+            <ItemRow key={t.id} item={t} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
           ))}
         </Reorder.Group>
         {active.length === 0 && <div className="opacity-60">Aucune quête en cours.</div>}
