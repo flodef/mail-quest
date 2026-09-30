@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconPackage, IconLogout, IconDotsVertical, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconPackage, IconLogout, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened } from "@tabler/icons-react";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
+import InboxRow, { fmtDate } from "@/components/InboxRow";
 import Victory from "@/components/Victory";
 
 interface InboxItem { account: string; uid: number; from: string; fromEmail: string; subject: string; date: string | null; unread: boolean }
@@ -28,6 +29,7 @@ export default function Game() {
   const [menuFor, setMenuFor] = useState<number | null>(null);
   const [readingMsg, setReadingMsg] = useState<MsgBody | null>(null);
   const [muted, setMuted] = useState<{ account: string; sender: string }[]>([]);
+  const [confirm, setConfirm] = useState<{ label: string; run: () => void } | null>(null);
 
   const say = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
@@ -134,8 +136,7 @@ export default function Game() {
     else say("💀 Message original introuvable");
   }
 
-  async function clearJar() {
-    if (!window.confirm(`Supprimer les ${aside.length} missive(s) de la jarre ? (déplacées vers la Corbeille)`)) return;
+  async function doClearJar() {
     setBusy("jar");
     try {
       const r = await fetch("/api/aside/clear", { method: "POST" });
@@ -150,13 +151,18 @@ export default function Game() {
     }
   }
 
+  const clearJar = () => setConfirm({
+    label: `Jeter les ${aside.length} missive(s) de la jarre à la Corbeille ?`,
+    run: doClearJar,
+  });
+
   async function readMsg(m: InboxItem) {
     const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
     if (r.ok) setReadingMsg(await r.json());
     else say("💀 Lecture impossible");
   }
 
-  async function msgAction(m: InboxItem, action: "generate" | "mute" | "delete" | "deleteAll" | "unmute") {
+  async function msgAction(m: InboxItem, action: "generate" | "mute" | "delete" | "deleteAll" | "deleteAllGo" | "unmute") {
     setMenuFor(null);
     const key = `msg:${m.account}:${m.uid}`;
     if (busy) return;
@@ -179,8 +185,15 @@ export default function Game() {
         const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`, { method: "DELETE" });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
         say("🗑 Message supprimé");
+      } else if (action === "deleteAll") {
+        setBusy(null);
+        setConfirm({
+          label: `Jeter TOUS les messages de ${m.from} à la Corbeille ?`,
+          run: () => void msgAction(m, "deleteAllGo"),
+        });
+        return;
       } else {
-        if (!window.confirm(`Supprimer TOUS les messages de ${m.from} ?`)) { setBusy(null); return; }
+        // deleteAllGo — après confirmation
         const r = await fetch(`/api/message?account=${m.account}&sender=${encodeURIComponent(m.fromEmail)}`, { method: "DELETE" });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Échec");
@@ -294,21 +307,25 @@ export default function Game() {
               <button className="btn-pixel ghost !px-2" onClick={() => setInboxOf(null)}>✕</button>
             </div>
             {(inbox.latest ?? []).map((m) => (
-              <div key={m.uid} className={`relative py-3 border-b border-[#2a4a2a] ${m.unread ? "font-bold" : "opacity-60"}`}>
-                <button className="w-full text-left" disabled={!!busy} onClick={() => readMsg(m)}>
-                  <div className="text-lg leading-tight pr-8">{m.from}</div>
-                  <div className="opacity-80 pr-8">{m.subject}</div>
-                </button>
-                <button
-                  className="absolute right-0 top-3 btn-pixel ghost !px-1.5 !py-1"
-                  onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === m.uid ? null : m.uid); }}
+              <div key={m.uid} className="relative">
+                <InboxRow
+                  unread={m.unread}
+                  disabled={!!busy}
+                  onOpen={() => readMsg(m)}
+                  onToggleMenu={() => setMenuFor(menuFor === m.uid ? null : m.uid)}
+                  onGenerate={() => void msgAction(m, "generate")}
+                  onDelete={() => void msgAction(m, "delete")}
                 >
-                  <IconDotsVertical size={16} />
-                </button>
+                  <div className="flex items-start gap-2 pr-8">
+                    <div className="text-lg leading-tight flex-1 min-w-0">{m.from}</div>
+                    <div className="font-pixel text-[6px] opacity-50 pt-1.5 shrink-0">{fmtDate(m.date)}</div>
+                  </div>
+                  <div className="opacity-80 pr-8">{m.subject}</div>
+                </InboxRow>
                 {menuFor === m.uid && (
                   <div
                     ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: "smooth" })}
-                    className="absolute right-0 top-12 z-50 panel p-1.5 flex flex-col gap-1 min-w-[240px]"
+                    className="absolute right-0 top-full z-50 panel p-1.5 flex flex-col gap-1 min-w-[240px]"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left" onClick={() => msgAction(m, "generate")}>
@@ -379,12 +396,26 @@ export default function Game() {
             <div className="flex flex-col gap-3 mt-5">
               <button className="btn-pixel ghost !text-[9px] flex items-center justify-center gap-2" disabled={!!busy}
                 onClick={async () => { const d = reading; setReading(null); await readOriginal(d); }}>
-                <IconMailOpened size={18} /> Voir le message reçu
+                <IconMailOpened size={18} /> Lire le parchemin
               </button>
               <div className="flex gap-3">
                 <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" onClick={() => { setReading(null); act(reading, "aside"); }}><IconPackage size={22} /> Côté</button>
                 <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={async () => { const d = reading; setReading(null); await act(d, "send"); }}><IconSword size={22} /> Envoyer</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation stylée */}
+      {confirm && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setConfirm(null)}>
+          <div className="panel max-w-sm w-full p-5 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="font-pixel text-[9px] text-[var(--ruby)]">⚠ ATTENTION, VOYAGEUR</div>
+            <div className="text-lg leading-snug">{confirm.label}</div>
+            <div className="flex gap-3">
+              <button className="btn-pixel ghost flex-1" onClick={() => setConfirm(null)}>Non</button>
+              <button className="btn-pixel danger flex-1" onClick={() => { const r = confirm.run; setConfirm(null); r(); }}>Oui</button>
             </div>
           </div>
         </div>
