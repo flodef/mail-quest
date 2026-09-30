@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { getAccount } from "@/lib/mail/accounts";
-import { deleteFromSender, deleteMessage, getMessage } from "@/lib/mail/imap";
+import { deleteFromSender, deleteMessage, findOriginalMessage, getMessage } from "@/lib/mail/imap";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const account = url.searchParams.get("account") ?? "";
-  const uid = Number(url.searchParams.get("uid"));
-  if (!account || !Number.isFinite(uid)) {
-    return NextResponse.json({ error: "account, uid required" }, { status: 400 });
+  const uidRaw = url.searchParams.get("uid");
+  const uid = uidRaw === null ? NaN : Number(uidRaw);
+  const to = url.searchParams.get("to") ?? "";
+  const subject = url.searchParams.get("subject") ?? "";
+  if (!account || (!Number.isFinite(uid) && !(to && subject))) {
+    return NextResponse.json({ error: "account + (uid or to+subject) required" }, { status: 400 });
   }
   try {
-    const msg = await getMessage(getAccount(account), uid);
+    const acc = getAccount(account);
+    const msg = Number.isFinite(uid)
+      ? await getMessage(acc, uid)
+      : await findOriginalMessage(acc, to, subject);
     if (!msg) return NextResponse.json({ error: "not found" }, { status: 404 });
     return NextResponse.json(msg);
   } catch (e) {
@@ -23,7 +29,8 @@ export async function GET(req: Request) {
 export async function DELETE(req: Request) {
   const url = new URL(req.url);
   const account = url.searchParams.get("account") ?? "";
-  const uid = Number(url.searchParams.get("uid"));
+  const uidRaw = url.searchParams.get("uid");
+  const uid = uidRaw === null ? NaN : Number(uidRaw);
   const sender = url.searchParams.get("sender") ?? "";
   if (!account || (!Number.isFinite(uid) && !sender)) {
     return NextResponse.json({ error: "account + (uid or sender) required" }, { status: 400 });

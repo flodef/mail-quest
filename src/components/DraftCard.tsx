@@ -21,6 +21,7 @@ export default function DraftCard({
   onSend,
   onAside,
   onExpand,
+  onReadOriginal,
   zIndex,
 }: {
   draft: Draft;
@@ -28,6 +29,7 @@ export default function DraftCard({
   onSend: () => void;
   onAside: () => void;
   onExpand: () => void;
+  onReadOriginal: () => void;
   zIndex: number;
 }) {
   const x = useMotionValue(0);
@@ -82,10 +84,16 @@ export default function DraftCard({
           <div className="text-2xl leading-tight font-bold">{draft.subject}</div>
         </div>
 
-        <div className="text-lg leading-snug opacity-80 line-clamp-4">{draft.preview || "…"}</div>
-
         <button
           onClick={(e) => { e.stopPropagation(); if (!dragging) onExpand(); }}
+          className="text-left text-lg leading-snug opacity-80 line-clamp-4"
+          title="Voir le draft complet"
+        >
+          {draft.preview || "Voir le draft →"}
+        </button>
+
+        <button
+          onClick={(e) => { e.stopPropagation(); if (!dragging) onReadOriginal(); }}
           className="mt-auto self-start font-pixel text-[8px] underline text-[#8a6d3b]"
         >
           LIRE LE PARCHEMIN →

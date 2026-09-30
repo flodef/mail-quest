@@ -234,12 +234,92 @@ export async function deleteFromSender(acc: MailAccount, senderEmail: string): P
     const trash = await trashMailbox(client);
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const uids = await client.search({ from: senderEmail }, { uid: true });
-      const list = Array.isArray(uids) ? uids : [];
-      if (list.length > 0) {
-        await client.messageMove(list.join(","), trash, { uid: true });
+      const want = senderEmail.toLowerCase();
+      const envs = await inboxEnvelopes(client);
+      const uids = envs.filter((e) => e.fromEmail.includes(want)).map((e) => e.uid);
+      if (uids.length > 0) {
+        await client.messageMove(uids.join(","), trash, { uid: true });
       }
-      return list.length;
+      return uids.length;
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+// OVH IMAP SEARCH is unreliable (returns empty), so we filter envelopes client-side.
+async function inboxEnvelopes(client: ImapFlow): Promise<{ uid: number; fromEmail: string; subject: string }[]> {
+  const status = await client.status("INBOX", { messages: true });
+  const total = typeof status === "object" && status ? (status.messages ?? 0) : 0;
+  if (total === 0) return [];
+  const out: { uid: number; fromEmail: string; subject: string }[] = [];
+  for await (const m of client.fetch("1:*", { envelope: true }, { uid: true })) {
+    out.push({
+      uid: m.uid,
+      fromEmail: (m.envelope?.from ?? []).map((a) => a.address ?? "").join(",").toLowerCase(),
+      subject: m.envelope?.subject ?? "",
+    });
+  }
+  return out;
+}
+
+const stripRe = (s: string) => s.replace(/^((re|fwd?|tr)\s*:\s*)+/i, "").trim().toLowerCase();
+
+export async function findOriginalMessage(acc: MailAccount, toAddr: string, subject: string): Promise<InboxFull | null> {
+  const want = stripRe(subject);
+  const wantFrom = (toAddr.split(",")[0] ?? "").trim().toLowerCase();
+  return withClient(acc, async (client) => {
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const envs = await inboxEnvelopes(client);
+      let bestUid: number | null = null;
+      for (const e of envs) {
+        const subjMatch = stripRe(e.subject) === want;
+        const fromMatch = wantFrom && e.fromEmail.includes(wantFrom);
+        if (subjMatch && fromMatch) bestUid = e.uid;
+      }
+      if (bestUid === null) {
+        for (const e of envs) if (stripRe(e.subject) === want) bestUid = e.uid;
+      }
+      if (bestUid === null) return null;
+      const buf = await downloadRaw(client, bestUid);
+      if (!buf) return null;
+      const parsed: ParsedMail = await simpleParser(buf);
+      const addr = (v: ParsedMail["to"]) =>
+        v ? (Array.isArray(v) ? v : [v]).flatMap((t) => t.value.map((a) => a.address ?? "")).join(", ") : "";
+      return {
+        account: acc.id,
+        uid: bestUid,
+        from: addr(parsed.from) || (parsed.from?.text ?? ""),
+        fromEmail: addr(parsed.from).toLowerCase(),
+        to: addr(parsed.to),
+        subject: parsed.subject ?? "(sans sujet)",
+        date: iso(parsed.date),
+        unread: false,
+        html: typeof parsed.html === "string" ? parsed.html : null,
+        text: parsed.text ?? null,
+      };
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+export async function clearDraftsToTrash(acc: MailAccount, uids: number[]): Promise<number> {
+  if (uids.length === 0) return 0;
+  return withClient(acc, async (client) => {
+    const box = await draftsMailbox(client);
+    const trash = await trashMailbox(client);
+    const lock = await client.getMailboxLock(box);
+    try {
+      let moved = 0;
+      for (const uid of uids) {
+        try {
+          await client.messageMove(String(uid), trash, { uid: true });
+          moved++;
+        } catch { /* skip missing */ }
+      }
+      return moved;
     } finally {
       lock.release();
     }

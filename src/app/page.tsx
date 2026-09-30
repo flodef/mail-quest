@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconPackage, IconLogout, IconDotsVertical, IconVolumeOff, IconWand, IconTrash, IconX } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconPackage, IconLogout, IconDotsVertical, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened } from "@tabler/icons-react";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
 import Victory from "@/components/Victory";
@@ -107,6 +107,49 @@ export default function Game() {
     if (r.ok) setReading(await r.json());
   }
 
+  // Pré-remplit l'aperçu des 3 premières cartes (le listing drafts n'embarque pas le corps)
+  useEffect(() => {
+    const targets = pile.slice(0, 3).filter((d) => !d.preview);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      targets.map(async (d) => {
+        const r = await fetch(`/api/draft?account=${d.account}&mailbox=${encodeURIComponent(d.mailbox)}&uid=${d.uid}`);
+        if (!r.ok) return null;
+        const j = (await r.json()) as { preview?: string; text?: string | null };
+        return { key: `${d.account}:${d.uid}`, preview: j.preview || (j.text ?? "").replace(/\s+/g, " ").slice(0, 160) };
+      }),
+    ).then((rows) => {
+      if (cancelled) return;
+      const map = new Map(rows.filter((r): r is { key: string; preview: string } => !!r && !!r.preview).map((r) => [r.key, r.preview]));
+      if (map.size === 0) return;
+      setPile((prev) => prev.map((d) => (map.has(`${d.account}:${d.uid}`) ? { ...d, preview: map.get(`${d.account}:${d.uid}`)! } : d)));
+    });
+    return () => { cancelled = true; };
+  }, [pile]);
+
+  async function readOriginal(d: Draft) {
+    const r = await fetch(`/api/message?account=${d.account}&to=${encodeURIComponent(d.to)}&subject=${encodeURIComponent(d.subject)}`);
+    if (r.ok) setReadingMsg(await r.json());
+    else say("💀 Message original introuvable");
+  }
+
+  async function clearJar() {
+    if (!window.confirm(`Supprimer les ${aside.length} missive(s) de la jarre ? (déplacées vers la Corbeille)`)) return;
+    setBusy("jar");
+    try {
+      const r = await fetch("/api/aside/clear", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error ?? "Échec");
+      say(`🏺 Jarre vidée (${j.cleared ?? 0})`);
+      await refresh();
+    } catch (e) {
+      say(`💀 ${e instanceof Error ? e.message : "Erreur"}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function readMsg(m: InboxItem) {
     const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
     if (r.ok) setReadingMsg(await r.json());
@@ -195,6 +238,7 @@ export default function Game() {
                   onSend={() => act(d, "send")}
                   onAside={() => act(d, "aside")}
                   onExpand={() => read(d)}
+                  onReadOriginal={() => readOriginal(d)}
                 />
               );
             })}
@@ -211,15 +255,22 @@ export default function Game() {
       {/* Boutons accessibles (fallback sans swipe) */}
       {pile.length > 0 && (
         <div className="flex gap-3 safe-bottom">
-          <button className="btn-pixel danger flex-1" disabled={!!busy} onClick={() => act(pile[0], "aside")}>🏺 Côté</button>
-          <button className="btn-pixel flex-1" disabled={!!busy} onClick={() => act(pile[0], "send")}>⚔ Envoyer</button>
+          <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "aside")}><IconPackage size={24} /> Côté</button>
+          <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "send")}><IconSword size={24} /> Envoyer</button>
         </div>
       )}
 
       {/* Pile "de côté" */}
       {showAside && (
         <div className="panel p-4 flex flex-col gap-3 max-h-[40dvh] overflow-y-auto">
-          <div className="font-pixel text-[8px] text-[var(--gold-bright)]">JARRE DES MISSIVES MISES DE CÔTÉ</div>
+          <div className="flex items-center justify-between">
+            <div className="font-pixel text-[8px] text-[var(--gold-bright)]">JARRE DES MISSIVES MISES DE CÔTÉ</div>
+            {aside.length > 0 && (
+              <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] flex items-center gap-1" disabled={!!busy} onClick={clearJar}>
+                <IconTrash size={16} /> Tout supprimer
+              </button>
+            )}
+          </div>
           {aside.length === 0 && <div className="opacity-60">Vide.</div>}
           {aside.map((d) => (
             <div key={`${d.account}:${d.uid}`} className="flex items-center gap-3 bg-[var(--shadow)] p-3 border border-[#3a5a2a]">
@@ -227,8 +278,8 @@ export default function Game() {
                 <div className="truncate text-lg">{d.to} — {d.subject}</div>
                 <div className="font-pixel text-[7px] opacity-60">{d.account}</div>
               </div>
-              <button className="btn-pixel !py-1.5 !px-2 text-[8px]" disabled={!!busy} onClick={() => act(d, "restore")}>↩</button>
-              <button className="btn-pixel danger !py-1.5 !px-2 text-[8px]" disabled={!!busy} onClick={() => act(d, "send")}>⚔</button>
+              <button className="btn-pixel !py-2 !px-2.5" title="Remettre dans la pile" disabled={!!busy} onClick={() => act(d, "restore")}><IconArrowBackUp size={20} /></button>
+              <button className="btn-pixel danger !py-2 !px-2.5" title="Envoyer" disabled={!!busy} onClick={() => act(d, "send")}><IconSword size={20} /></button>
             </div>
           ))}
         </div>
@@ -255,18 +306,22 @@ export default function Game() {
                   <IconDotsVertical size={16} />
                 </button>
                 {menuFor === m.uid && (
-                  <div className="absolute right-0 top-12 z-50 panel p-1.5 flex flex-col gap-1 min-w-[220px]" onClick={(e) => e.stopPropagation()}>
-                    <button className="btn-pixel ghost !py-1.5 !px-2 text-[8px] flex items-center gap-2 justify-start" onClick={() => msgAction(m, "generate")}>
-                      <IconWand size={14} /> Générer un draft
+                  <div
+                    ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: "smooth" })}
+                    className="absolute right-0 top-12 z-50 panel p-1.5 flex flex-col gap-1 min-w-[240px]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left" onClick={() => msgAction(m, "generate")}>
+                      <IconWand size={18} /> Générer un draft
                     </button>
-                    <button className="btn-pixel ghost !py-1.5 !px-2 text-[8px] flex items-center gap-2 justify-start" onClick={() => msgAction(m, "mute")}>
-                      <IconVolumeOff size={14} /> Muter ce destinataire
+                    <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left" onClick={() => msgAction(m, "mute")}>
+                      <IconVolumeOff size={18} /> Muter ce destinataire
                     </button>
-                    <button className="btn-pixel ghost !py-1.5 !px-2 text-[8px] flex items-center gap-2 justify-start text-[var(--ruby)]" onClick={() => msgAction(m, "delete")}>
-                      <IconTrash size={14} /> Supprimer
+                    <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left text-[var(--ruby)]" onClick={() => msgAction(m, "delete")}>
+                      <IconTrash size={18} /> Supprimer
                     </button>
-                    <button className="btn-pixel ghost !py-1.5 !px-2 text-[8px] flex items-center gap-2 justify-start text-[var(--ruby)]" onClick={() => msgAction(m, "deleteAll")}>
-                      <IconTrash size={14} /> Supprimer tous de ce destinataire
+                    <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left text-[var(--ruby)]" onClick={() => msgAction(m, "deleteAll")}>
+                      <IconTrash size={18} /> Supprimer tout de ce destinataire
                     </button>
                   </div>
                 )}
@@ -296,11 +351,11 @@ export default function Game() {
       {readingMsg && (
         <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" onClick={() => setReadingMsg(null)}>
           <div className="card-parchment max-w-md w-full max-h-[80dvh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1">DE : {readingMsg.from}</div>
-            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3">SUJET : {readingMsg.subject}</div>
+            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1 break-all">DE : {readingMsg.from}</div>
+            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3 break-words">SUJET : {readingMsg.subject}</div>
             {readingMsg.html
               ? <div className="prose-sm" dangerouslySetInnerHTML={{ __html: readingMsg.html }} />
-              : <pre className="whitespace-pre-wrap text-lg leading-snug">{readingMsg.text}</pre>}
+              : <pre className="whitespace-pre-wrap text-lg leading-snug">{readingMsg.text ?? "(vide)"}</pre>}
             <div className="flex gap-3 mt-5">
               <button className="btn-pixel flex-1" disabled={!!busy}
                 onClick={async () => { const m = readingMsg; setReadingMsg(null); await msgAction(m, "generate"); }}>
@@ -316,14 +371,20 @@ export default function Game() {
       {reading && (
         <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" onClick={() => setReading(null)}>
           <div className="card-parchment max-w-md w-full max-h-[80dvh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1">À : {reading.to}</div>
-            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3">SUJET : {reading.subject}</div>
+            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1 break-all">À : {reading.to}</div>
+            <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3 break-words">SUJET : {reading.subject}</div>
             {reading.html
               ? <div className="prose-sm" dangerouslySetInnerHTML={{ __html: reading.html }} />
-              : <pre className="whitespace-pre-wrap text-lg leading-snug">{reading.text}</pre>}
-            <div className="flex gap-3 mt-5">
-              <button className="btn-pixel danger flex-1" onClick={() => { setReading(null); act(reading, "aside"); }}>🏺 Côté</button>
-              <button className="btn-pixel flex-1" disabled={!!busy} onClick={async () => { const d = reading; setReading(null); await act(d, "send"); }}>⚔ Envoyer</button>
+              : <pre className="whitespace-pre-wrap text-lg leading-snug">{reading.text ?? "(vide)"}</pre>}
+            <div className="flex flex-col gap-3 mt-5">
+              <button className="btn-pixel ghost !text-[9px] flex items-center justify-center gap-2" disabled={!!busy}
+                onClick={async () => { const d = reading; setReading(null); await readOriginal(d); }}>
+                <IconMailOpened size={18} /> Voir le message reçu
+              </button>
+              <div className="flex gap-3">
+                <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" onClick={() => { setReading(null); act(reading, "aside"); }}><IconPackage size={22} /> Côté</button>
+                <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={async () => { const d = reading; setReading(null); await act(d, "send"); }}><IconSword size={22} /> Envoyer</button>
+              </div>
             </div>
           </div>
         </div>

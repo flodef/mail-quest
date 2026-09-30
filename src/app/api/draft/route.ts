@@ -8,7 +8,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const account = url.searchParams.get("account") ?? "";
   const mailbox = url.searchParams.get("mailbox") ?? "";
-  const uid = Number(url.searchParams.get("uid"));
+  const uidRaw = url.searchParams.get("uid");
+  const uid = uidRaw === null ? NaN : Number(uidRaw);
   if (!account || !mailbox || !Number.isFinite(uid)) {
     return NextResponse.json({ error: "account, mailbox, uid required" }, { status: 400 });
   }
