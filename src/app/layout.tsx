@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Mail Quest",
-  description: "Triage tes drafts comme une quête",
+  description: "Triage tes missives comme une quête",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Mail Quest" },
 };

@@ -53,7 +53,7 @@ export default function InboxRow({
       onDragEnd={onDragEnd}
     >
       <motion.div className="absolute inset-y-0 left-0 w-full flex items-center pl-3 font-pixel text-[8px] text-[#7fe08a]" style={{ opacity: genOpacity }}>
-        <IconWand size={18} className="mr-1" /> DRAFT
+        <IconWand size={18} className="mr-1" /> MISSIVE
       </motion.div>
       <motion.div className="absolute inset-y-0 right-0 w-full flex items-center justify-end pr-3 font-pixel text-[8px] text-[#ff8ba0]" style={{ opacity: delOpacity }}>
         SUPPRIMER <IconTrash size={18} className="ml-1" />

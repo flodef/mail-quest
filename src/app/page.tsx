@@ -28,6 +28,8 @@ export default function Game() {
   const [loading, setLoading] = useState(true);
   const [menuFor, setMenuFor] = useState<number | null>(null);
   const [readingMsg, setReadingMsg] = useState<MsgBody | null>(null);
+  const [readingCtx, setReadingCtx] = useState<Draft | null>(null);
+  const [improveText, setImproveText] = useState<string | null>(null);
   const [muted, setMuted] = useState<{ account: string; sender: string }[]>([]);
   const [confirm, setConfirm] = useState<{ label: string; run: () => void } | null>(null);
 
@@ -132,8 +134,30 @@ export default function Game() {
 
   async function readOriginal(d: Draft) {
     const r = await fetch(`/api/message?account=${d.account}&to=${encodeURIComponent(d.to)}&subject=${encodeURIComponent(d.subject)}`);
-    if (r.ok) setReadingMsg(await r.json());
+    if (r.ok) { setReadingCtx(d); setImproveText(null); setReadingMsg(await r.json()); }
     else say("💀 Message original introuvable");
+  }
+
+  async function improveMissive() {
+    const d = readingCtx;
+    if (!d || !improveText?.trim()) return;
+    setBusy("improve");
+    try {
+      const r = await fetch("/api/draft/improve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account: d.account, mailbox: d.mailbox, uid: d.uid, instructions: improveText.trim() }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error ?? "Échec");
+      say("✨ Missive réécrite !");
+      setReadingMsg(null); setReadingCtx(null); setImproveText(null);
+      await refresh();
+    } catch (e) {
+      say(`💀 ${e instanceof Error ? e.message : "Erreur"}`);
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function doClearJar() {
@@ -158,7 +182,7 @@ export default function Game() {
 
   async function readMsg(m: InboxItem) {
     const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
-    if (r.ok) setReadingMsg(await r.json());
+    if (r.ok) { setReadingCtx(null); setImproveText(null); setReadingMsg(await r.json()); }
     else say("💀 Lecture impossible");
   }
 
@@ -169,11 +193,11 @@ export default function Game() {
     setBusy(key);
     try {
       if (action === "generate") {
-        say("✨ Génération du draft…");
+        say("✨ Génération de la missive…");
         const r = await fetch("/api/message/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: m.account, uid: m.uid }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Échec");
-        say("✨ Draft généré !");
+        say("✨ Missive générée !");
       } else if (action === "mute") {
         const r = await fetch("/api/mute", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: m.account, sender: m.fromEmail }) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
@@ -316,11 +340,11 @@ export default function Game() {
                   onGenerate={() => void msgAction(m, "generate")}
                   onDelete={() => void msgAction(m, "delete")}
                 >
-                  <div className="flex items-start gap-2 pr-8">
-                    <div className="text-lg leading-tight flex-1 min-w-0">{m.from}</div>
-                    <div className="font-pixel text-[6px] opacity-50 pt-1.5 shrink-0">{fmtDate(m.date)}</div>
+                  <div className="text-lg leading-tight pr-8">{m.from}</div>
+                  <div className="flex items-baseline gap-2 pr-8">
+                    <div className="opacity-80 flex-1 min-w-0">{m.subject}</div>
+                    <div className="font-pixel text-[6px] opacity-50 shrink-0">{fmtDate(m.date)}</div>
                   </div>
-                  <div className="opacity-80 pr-8">{m.subject}</div>
                 </InboxRow>
                 {menuFor === m.uid && (
                   <div
@@ -329,7 +353,7 @@ export default function Game() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left" onClick={() => msgAction(m, "generate")}>
-                      <IconWand size={18} /> Générer un draft
+                      <IconWand size={18} /> Générer une missive
                     </button>
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left" onClick={() => msgAction(m, "mute")}>
                       <IconVolumeOff size={18} /> Muter ce destinataire
@@ -366,20 +390,49 @@ export default function Game() {
 
       {/* Lecture message inbox */}
       {readingMsg && (
-        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" onClick={() => setReadingMsg(null)}>
+        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" onClick={() => { setReadingMsg(null); setReadingCtx(null); setImproveText(null); }}>
           <div className="card-parchment max-w-md w-full max-h-[80dvh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1 break-all">DE : {readingMsg.from}</div>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3 break-words">SUJET : {readingMsg.subject}</div>
             {readingMsg.html
               ? <div className="prose-sm" dangerouslySetInnerHTML={{ __html: readingMsg.html }} />
               : <pre className="whitespace-pre-wrap text-lg leading-snug">{readingMsg.text ?? "(vide)"}</pre>}
-            <div className="flex gap-3 mt-5">
-              <button className="btn-pixel flex-1" disabled={!!busy}
-                onClick={async () => { const m = readingMsg; setReadingMsg(null); await msgAction(m, "generate"); }}>
-                <IconWand size={14} className="inline mr-1" /> Générer draft
-              </button>
-              <button className="btn-pixel ghost flex-1" onClick={() => setReadingMsg(null)}>Fermer</button>
-            </div>
+            {readingCtx ? (
+              <div className="flex flex-col gap-3 mt-5">
+                {improveText !== null ? (
+                  <>
+                    <textarea
+                      className="panel w-full p-3 text-base min-h-[90px] text-[#2a1c0e] bg-[#f7ecc9]"
+                      placeholder="Que rajouter / changer ? (ex : dis-lui bon anniversaire, plus court, ton plus formel…)"
+                      autoFocus
+                      value={improveText}
+                      onChange={(e) => setImproveText(e.target.value)}
+                    />
+                    <div className="flex gap-3">
+                      <button className="btn-pixel ghost flex-1" onClick={() => setImproveText(null)}>Annuler</button>
+                      <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy || !improveText.trim()} onClick={() => void improveMissive()}>
+                        <IconWand size={18} /> Améliorer
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex gap-3">
+                    <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => setImproveText("")}>
+                      <IconWand size={18} /> Améliorer la missive
+                    </button>
+                    <button className="btn-pixel ghost flex-1" onClick={() => { setReadingMsg(null); setReadingCtx(null); }}>Fermer</button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex gap-3 mt-5">
+                <button className="btn-pixel flex-1" disabled={!!busy}
+                  onClick={async () => { const m = readingMsg; setReadingMsg(null); await msgAction(m, "generate"); }}>
+                  <IconWand size={16} className="inline mr-1" /> Générer une missive
+                </button>
+                <button className="btn-pixel ghost flex-1" onClick={() => setReadingMsg(null)}>Fermer</button>
+              </div>
+            )}
           </div>
         </div>
       )}

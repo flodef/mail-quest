@@ -74,22 +74,20 @@ export default function DraftCard({
           <span className="font-pixel text-[8px] uppercase text-[#8a6d3b]">{draft.account}</span>
         </div>
 
-        <div>
-          <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1">À :</div>
-          <div className="text-xl leading-tight break-words">{draft.to || "—"}</div>
+        <div className="text-xl leading-tight break-words">
+          <span className="font-pixel text-[8px] text-[#8a6d3b]">À : </span>{draft.to || "—"}
         </div>
 
-        <div>
-          <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1">SUJET :</div>
-          <div className="text-2xl leading-tight font-bold">{draft.subject}</div>
+        <div className="text-xl leading-tight font-bold break-words">
+          <span className="font-pixel text-[8px] text-[#8a6d3b] font-normal">SUJET : </span>{draft.subject}
         </div>
 
         <button
           onClick={(e) => { e.stopPropagation(); if (!dragging) onExpand(); }}
           className="text-left text-lg leading-snug opacity-80 line-clamp-4"
-          title="Voir le draft complet"
+          title="Voir la missive complète"
         >
-          {draft.preview || "Voir le draft →"}
+          {draft.preview || "Voir la missive →"}
         </button>
 
         <button

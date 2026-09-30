@@ -1,3 +1,31 @@
+export async function improveDraft(opts: { draft: string; instructions: string; context?: string }): Promise<string> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY env var missing");
+  const model = process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
+  const prompt = [
+    "Tu réécris un brouillon d'email existant en appliquant les consignes de l'utilisateur.",
+    "Réponds UNIQUEMENT avec le nouveau corps du brouillon, sans explication, sans markdown.",
+    "Garde la langue du brouillon existant sauf si la consigne demande de changer.",
+    "Applique fidèlement les consignes : ajouts, suppressions, changement de ton, etc.",
+    "",
+    "Brouillon actuel:",
+    opts.draft.slice(0, 6000),
+    "",
+    opts.context ? `Contexte (message original):\n${opts.context.slice(0, 4000)}\n` : "",
+    `Consignes: ${opts.instructions}`,
+  ].join("\n");
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  });
+  if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const j = (await r.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim();
+  if (!text) throw new Error("Réponse IA vide");
+  return text;
+}
+
 export async function generateReply(opts: { from: string; subject: string; body: string }): Promise<string> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY env var missing");
