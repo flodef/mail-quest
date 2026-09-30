@@ -56,7 +56,7 @@ export default function InboxRow({
         <IconWand size={18} className="mr-1" /> FORGER
       </motion.div>
       <motion.div className="absolute inset-y-0 right-0 w-full flex items-center justify-end pr-3 font-pixel text-[8px] text-[#ff8ba0]" style={{ opacity: delOpacity }}>
-        CORBEILLE <IconTrash size={18} className="ml-1" />
+        POTENCE <IconTrash size={18} className="ml-1" />
       </motion.div>
       <div className={`relative py-3 ${unread ? "font-bold" : "opacity-60"}`}>
         <button className="w-full text-left" disabled={disabled} onClick={onOpen}>

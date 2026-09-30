@@ -60,7 +60,7 @@ export default function DraftCard({
           className="absolute top-3 left-3 font-pixel text-[9px] px-2 py-1 border-2 border-[var(--link-green)] text-[var(--link-green)] bg-[#e8ffe8]"
           style={{ opacity: sendOpacity }}
         >
-          ⚔ ENVOYER
+          ⚔ EXPÉDIER
         </motion.div>
         <motion.div
           className="absolute top-3 right-3 font-pixel text-[9px] px-2 py-1 border-2 border-[var(--ruby)] text-[var(--ruby)] bg-[#ffe8ec]"

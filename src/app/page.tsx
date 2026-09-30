@@ -206,7 +206,7 @@ export default function Game() {
   }
 
   const clearJar = () => setConfirm({
-    label: `Briser la jarre ? Les ${aside.length} missive(s) fileront à la Corbeille.`,
+    label: `Briser la jarre ? Les ${aside.length} missive(s) fileront à la potence.`,
     run: doClearJar,
   });
 
@@ -242,11 +242,11 @@ export default function Game() {
         dropInboxItems(m.account, (x) => x.uid === m.uid);
         const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`, { method: "DELETE" });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
-        say("Missive à la Corbeille", IconTrash);
+        say("Missive à la potence", IconTrash);
       } else if (action === "deleteAll") {
         setBusy(null);
         setConfirm({
-          label: `Jeter TOUTES les missives de ${m.from} à la Corbeille ?`,
+          label: `Jeter TOUTES les missives de ${m.from} à la potence ?`,
           run: () => void msgAction(m, "deleteAllGo"),
         });
         return;
@@ -256,7 +256,7 @@ export default function Game() {
         const r = await fetch(`/api/message?account=${m.account}&sender=${encodeURIComponent(m.fromEmail)}`, { method: "DELETE" });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Échec");
-        say(`${j.deleted ?? 0} missive(s) à la Corbeille`, IconTrash);
+        say(`${j.deleted ?? 0} missive(s) à la potence`, IconTrash);
       }
       await refresh();
     } catch (e) {
@@ -286,7 +286,7 @@ export default function Game() {
       <Hud accounts={accounts} onAccountTap={(id) => setInboxOf(id)} />
 
       <div className="flex items-center justify-between">
-        <div className="font-pixel text-[9px] opacity-80">MISSIVES À ENVOYER : {pile.length}</div>
+        <div className="font-pixel text-[9px] opacity-80">MISSIVES À EXPÉDIER : {pile.length}</div>
         <button className="btn-pixel ghost !px-2 !py-1 text-[8px] flex items-center gap-1" onClick={() => setShowAside(!showAside)}>
           <IconPackage size={14} /> JARRE ({aside.length})
         </button>
@@ -319,7 +319,7 @@ export default function Game() {
         {pile.length > 0 && (
           <div className="absolute -bottom-2 inset-x-0 flex justify-between font-pixel text-[7px] opacity-60 pointer-events-none px-2">
             <span className="anim-hint">◀ À LA JARRE</span>
-            <span className="anim-hint">ENVOYER ▶</span>
+            <span className="anim-hint">EXPÉDIER ▶</span>
           </div>
         )}
       </div>
@@ -328,7 +328,7 @@ export default function Game() {
       {pile.length > 0 && (
         <div className="flex gap-3 safe-bottom">
           <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "aside")}><IconPackage size={24} /> Jarre</button>
-          <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "send")}><IconSword size={24} /> Envoyer</button>
+          <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "send")}><IconSword size={24} /> Expédier</button>
         </div>
       )}
 
@@ -351,7 +351,7 @@ export default function Game() {
                 <div className="font-pixel text-[7px] opacity-60">{d.account}</div>
               </div>
               <button className="btn-pixel !py-2 !px-2.5" title="Renvoyer en quête" disabled={!!busy} onClick={() => act(d, "restore")}><IconArrowBackUp size={20} /></button>
-              <button className="btn-pixel danger !py-2 !px-2.5" title="Envoyer" disabled={!!busy} onClick={() => act(d, "send")}><IconSword size={20} /></button>
+              <button className="btn-pixel danger !py-2 !px-2.5" title="Expédier" disabled={!!busy} onClick={() => act(d, "send")}><IconSword size={20} /></button>
             </div>
           ))}
         </div>
@@ -394,7 +394,7 @@ export default function Game() {
                       <IconVolumeOff size={18} /> Bannir ce correspondant
                     </button>
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left text-[var(--ruby)]" onClick={() => msgAction(m, "delete")}>
-                      <IconTrash size={18} /> Jeter à la Corbeille
+                      <IconTrash size={18} /> Jeter à la potence
                     </button>
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left text-[var(--ruby)]" onClick={() => msgAction(m, "deleteAll")}>
                       <IconTrash size={18} /> Tout jeter de ce correspondant
@@ -488,7 +488,7 @@ export default function Game() {
               </button>
               <div className="flex gap-3">
                 <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" onClick={() => { setReading(null); act(reading, "aside"); }}><IconPackage size={22} /> Jarre</button>
-                <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={async () => { const d = reading; setReading(null); await act(d, "send"); }}><IconSword size={22} /> Envoyer</button>
+                <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={async () => { const d = reading; setReading(null); await act(d, "send"); }}><IconSword size={22} /> Expédier</button>
               </div>
             </div>
           </div>
