@@ -375,11 +375,11 @@ export default function Game() {
                   onGenerate={() => void msgAction(m, "generate")}
                   onDelete={() => void msgAction(m, "delete")}
                 >
-                  <div className="text-lg leading-tight pr-8">{m.from}</div>
                   <div className="flex items-baseline gap-2 pr-8">
-                    <div className="opacity-80 flex-1 min-w-0">{m.subject}</div>
-                    <div className="font-pixel text-[6px] opacity-50 shrink-0">{fmtDate(m.date)}</div>
+                    <div className="text-lg leading-tight flex-1 min-w-0">{m.from}</div>
+                    <div className="font-pixel text-[6px] opacity-50 shrink-0 pr-6">{fmtDate(m.date)}</div>
                   </div>
+                  <div className="opacity-80 pr-8">{m.subject}</div>
                 </InboxRow>
                 {menuFor === m.uid && (
                   <div
