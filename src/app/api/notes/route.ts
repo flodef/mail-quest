@@ -20,7 +20,8 @@ export async function POST(req: Request) {
     typeof body.title === "string" && body.title.trim()
       ? body.title.trim().slice(0, 200)
       : await generateTitle(text);
-  return NextResponse.json({ ok: true, note: await addNote(title, items) });
+  const id = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id ?? "") ? body.id : undefined;
+  return NextResponse.json({ ok: true, note: await addNote(title, items, id) });
 }
 
 export async function PATCH(req: Request) {

@@ -8,11 +8,21 @@ export async function GET() {
   return NextResponse.json({ tasks: await listTasks() });
 }
 
+const isUuid = (v: unknown): v is string =>
+  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
 export async function POST(req: Request) {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
   const body = await req.json().catch(() => ({}));
-  const texts = Array.isArray(body.texts) ? body.texts : typeof body.text === "string" ? [body.text] : [];
-  const added = await addTasks(texts.filter((t: unknown) => typeof t === "string"));
+  const items: { text: string; id?: string }[] = [];
+  if (Array.isArray(body.texts)) {
+    for (const t of body.texts) {
+      if (typeof t === "string") items.push({ text: t });
+      else if (t && typeof t.text === "string") items.push({ text: t.text, id: isUuid(t.id) ? t.id : undefined });
+    }
+  }
+  if (typeof body.text === "string") items.push({ text: body.text, id: isUuid(body.id) ? body.id : undefined });
+  const added = await addTasks(items);
   return NextResponse.json({ ok: true, added });
 }
 

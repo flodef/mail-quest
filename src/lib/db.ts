@@ -125,15 +125,20 @@ export async function listTasks(): Promise<Task[]> {
   return rows as unknown as Task[];
 }
 
-export async function addTasks(texts: string[]): Promise<number> {
+export async function addTasks(items: { text: string; id?: string }[]): Promise<number> {
   await ensureDb();
   let added = 0;
   // Insertion en haut de pile : on insère les lignes en ordre inverse, chacune
   // à min(position)-1, pour garder l'ordre de saisie (1re ligne = tout en haut).
-  const list = texts.map((t) => t.trim()).filter(Boolean);
-  for (const text of [...list].reverse()) {
-    await sql()`INSERT INTO tasks (text, position)
-      SELECT ${text}, COALESCE(MIN(position), 1) - 1 FROM tasks`;
+  const list = items.map((t) => ({ ...t, text: t.text.trim() })).filter((t) => t.text);
+  for (const { text, id } of [...list].reverse()) {
+    if (id) {
+      await sql()`INSERT INTO tasks (id, text, position)
+        SELECT ${id}::uuid, ${text}, COALESCE(MIN(position), 1) - 1 FROM tasks`;
+    } else {
+      await sql()`INSERT INTO tasks (text, position)
+        SELECT ${text}, COALESCE(MIN(position), 1) - 1 FROM tasks`;
+    }
     added++;
   }
   return added;
@@ -177,9 +182,11 @@ export async function listNotes(): Promise<Note[]> {
   return rows as unknown as Note[];
 }
 
-export async function addNote(title: string, body: string): Promise<Note> {
+export async function addNote(title: string, body: string, id?: string): Promise<Note> {
   await ensureDb();
-  const rows = await sql()`INSERT INTO notes (title, body) VALUES (${title}, ${body}) RETURNING id, title, body, created_at`;
+  const rows = id
+    ? await sql()`INSERT INTO notes (id, title, body) VALUES (${id}::uuid, ${title}, ${body}) RETURNING id, title, body, created_at`
+    : await sql()`INSERT INTO notes (title, body) VALUES (${title}, ${body}) RETURNING id, title, body, created_at`;
   return rows[0] as unknown as Note;
 }
 

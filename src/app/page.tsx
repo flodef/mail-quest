@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
+import { enqueueOp, flushOps, loadSnapshot, pendingOps, saveSnapshot, type Op } from "@/lib/offline";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
 import InboxRow, { fmtDate } from "@/components/InboxRow";
@@ -39,6 +40,8 @@ export default function Game() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [showQuest, setShowQuest] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
+  const [pending, setPending] = useState(0);
   // Ne fermer un overlay au clic que si le press a commencé sur le backdrop
   // (un swipe/drag relâché hors du panneau produit un click backdrop).
   const backdropDown = useRef(false);
@@ -51,20 +54,81 @@ export default function Game() {
 
   const say = (msg: string, Icon?: typeof IconSword) => { setToast({ msg, Icon }); setTimeout(() => setToast(null), 2500); };
 
+  interface Snapshot {
+    accounts: OverviewAccount[];
+    muted: { account: string; sender: string }[];
+    pile: Draft[];
+    aside: Draft[];
+    tasks: Task[];
+    notes: Note[];
+  }
+
   const refresh = useCallback(async () => {
-    const [ov, tk, nt] = await Promise.all([
-      fetch("/api/overview").then((r) => r.json()),
-      fetch("/api/tasks").then((r) => (r.ok ? r.json() : { tasks: [] })),
-      fetch("/api/notes").then((r) => (r.ok ? r.json() : { notes: [] })),
-    ]);
-    setAccounts(ov.accounts ?? []);
-    setMuted(ov.muted ?? []);
-    setPile((ov.accounts ?? []).flatMap((a: { active?: Draft[] }) => a.active ?? []));
-    setAside((ov.accounts ?? []).flatMap((a: { aside?: Draft[] }) => a.aside ?? []));
-    setTasks(tk.tasks ?? []);
-    setNotes(nt.notes ?? []);
+    try {
+      const [ovR, tkR, ntR] = await Promise.all([fetch("/api/overview"), fetch("/api/tasks"), fetch("/api/notes")]);
+      if (!ovR.ok || !tkR.ok || !ntR.ok) throw new Error("api error");
+      const [ov, tk, nt] = await Promise.all([ovR.json(), tkR.json(), ntR.json()]);
+      const snap: Snapshot = {
+        accounts: ov.accounts ?? [],
+        muted: ov.muted ?? [],
+        pile: (ov.accounts ?? []).flatMap((a: { active?: Draft[] }) => a.active ?? []),
+        aside: (ov.accounts ?? []).flatMap((a: { aside?: Draft[] }) => a.aside ?? []),
+        tasks: tk.tasks ?? [],
+        notes: nt.notes ?? [],
+      };
+      setAccounts(snap.accounts);
+      setMuted(snap.muted);
+      setPile(snap.pile);
+      setAside(snap.aside);
+      setTasks(snap.tasks);
+      setNotes(snap.notes);
+      saveSnapshot(snap);
+      setOffline(false);
+    } catch {
+      const s = loadSnapshot<Snapshot>();
+      if (s) {
+        setAccounts(s.accounts ?? []);
+        setMuted(s.muted ?? []);
+        setPile(s.pile ?? []);
+        setAside(s.aside ?? []);
+        setTasks(s.tasks ?? []);
+        setNotes(s.notes ?? []);
+      }
+      setOffline(true);
+    }
     setLoading(false);
   }, []);
+
+  // Rejoue les mutations en attente puis resynchronise l'état serveur.
+  const sync = useCallback(async () => {
+    const had = pendingOps().length;
+    const remaining = await flushOps();
+    setPending(remaining);
+    if (remaining === 0) {
+      setOffline(false);
+      if (had > 0) await refresh(); // état serveur faisant foi après rejoue
+    }
+  }, [refresh]);
+
+  // Mutation offline-capable : toujours en file pour préserver l'ordre,
+  // flush immédiat (no-op réseau quand en ligne).
+  function mutate(op: Op) {
+    setPending(enqueueOp(op));
+    void sync();
+  }
+
+  useEffect(() => {
+    const onOnline = () => void sync();
+    const onOffline = () => setOffline(true);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    const id = setTimeout(() => void sync(), 0);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      clearTimeout(id);
+    };
+  }, [sync]);
 
   useEffect(() => {
     const id = setTimeout(() => void refresh(), 0);
@@ -300,71 +364,69 @@ export default function Game() {
     }
   }
 
-  async function questPatch(body: Record<string, unknown>) {
-    await fetch("/api/tasks", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  }
+  const sortTasks = (ts: Task[]) => ts.sort((a, b) => (a.done === b.done ? a.position - b.position : a.done ? 1 : -1));
+  const json = (body: Record<string, unknown>): RequestInit => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const patch = (body: Record<string, unknown>): RequestInit => ({ ...json(body), method: "PATCH" });
 
-  async function questAdd(text: string) {
-    setBusy("quest");
-    await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
-    await refresh();
-    setBusy(null);
+  function questAdd(text: string) {
+    const t = text.trim();
+    if (!t) return;
+    const id = crypto.randomUUID();
+    setTasks((ts) =>
+      sortTasks([...ts, { id, text: t, done: false, position: Math.min(0, ...ts.map((x) => x.position)) - 1, created_at: new Date().toISOString() }]),
+    );
+    mutate({ url: "/api/tasks", init: json({ text: t, id }) });
   }
 
   function questDone(id: string) {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, done: true } : t)));
-    void questPatch({ id, done: true });
+    mutate({ url: "/api/tasks", init: patch({ id, done: true }) });
     say("Quête accomplie !", IconSword);
   }
 
   function questBottom(id: string) {
     setTasks((ts) => {
       const max = Math.max(0, ...ts.map((t) => t.position));
-      return ts
-        .map((t) => (t.id === id ? { ...t, position: max + 1 } : t))
-        .sort((a, b) => (a.done === b.done ? a.position - b.position : a.done ? 1 : -1));
+      return sortTasks(ts.map((t) => (t.id === id ? { ...t, position: max + 1 } : t)));
     });
-    void questPatch({ id, toBottom: true });
+    mutate({ url: "/api/tasks", init: patch({ id, toBottom: true }) });
   }
 
   function questReorder(ids: string[]) {
     setTasks((ts) => {
       const pos = new Map(ids.map((id, i) => [id, i]));
-      return ts
-        .map((t) => (pos.has(t.id) ? { ...t, position: pos.get(t.id)! } : t))
-        .sort((a, b) => (a.done === b.done ? a.position - b.position : a.done ? 1 : -1));
+      return sortTasks(ts.map((t) => (pos.has(t.id) ? { ...t, position: pos.get(t.id)! } : t)));
     });
-    void questPatch({ order: ids });
+    mutate({ url: "/api/tasks", init: patch({ order: ids }) });
   }
 
   const questPurge = () => setConfirm({
     label: `Purger les ${tasks.filter((t) => t.done).length} quête(s) accomplie(s) ?`,
-    run: async () => {
-      await fetch("/api/tasks?purge=1", { method: "DELETE" });
+    run: () => {
       setTasks((ts) => ts.filter((t) => !t.done));
+      mutate({ url: "/api/tasks?purge=1", init: { method: "DELETE" } });
       say("Trophées purgés", IconSkull);
     },
   });
 
-  async function noteAdd(body: string) {
-    setBusy("note");
-    const r = await fetch("/api/notes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body }) });
-    if (r.ok) {
-      const j = await r.json();
-      if (j.note) setNotes((ns) => [j.note, ...ns]);
-      say("Note rangée au fourre-tout", IconNotebook);
-    }
-    setBusy(null);
+  function noteAdd(body: string) {
+    const t = body.trim();
+    if (!t) return;
+    const id = crypto.randomUUID();
+    const first = t.split("\n").map((l) => l.replace(/^[•\-*✅\d.\s]+/, "").trim()).find(Boolean) ?? "Note";
+    setNotes((ns) => [{ id, title: first.slice(0, 60), body: t, created_at: new Date().toISOString() }, ...ns]);
+    mutate({ url: "/api/notes", init: json({ body: t, id }) });
+    say("Note rangée au fourre-tout", IconNotebook);
   }
 
   function noteDelete(id: string) {
     setNotes((ns) => ns.filter((n) => n.id !== id));
-    void fetch(`/api/notes?id=${id}`, { method: "DELETE" });
+    mutate({ url: `/api/notes?id=${id}`, init: { method: "DELETE" } });
   }
 
   function noteUpdate(id: string, body: string) {
     setNotes((ns) => ns.map((n) => (n.id === id ? { ...n, body } : n)));
-    void fetch("/api/notes", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, body }) });
+    mutate({ url: "/api/notes", init: patch({ id, body }) });
   }
 
   const clearJar = () => setConfirm({
@@ -436,7 +498,12 @@ export default function Game() {
     <main className="min-h-dvh flex flex-col p-4 gap-4 max-w-md mx-auto w-full">
       <header className="flex items-center justify-between">
         <h1 className="font-pixel text-[var(--gold-bright)] text-xs">MAIL QUEST</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {(offline || pending > 0) && (
+            <span className="font-pixel text-[7px] text-[var(--gold-bright)] flex items-center gap-1" title={pending > 0 ? `${pending} modif(s) en attente` : "Hors-ligne"}>
+              <IconWifiOff size={14} /> {pending > 0 ? `HORS-LIGNE (${pending})` : "HORS-LIGNE"}
+            </span>
+          )}
           {canInstall && (
             <button className="btn-pixel ghost !px-2" onClick={() => void installApp()} title="Installer l'app"><IconDeviceMobileDown size={18} /></button>
           )}
