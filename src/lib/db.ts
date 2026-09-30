@@ -36,6 +36,19 @@ export async function initDb(): Promise<void> {
     created_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (account, sender)
   )`;
+  await q`CREATE TABLE IF NOT EXISTS tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    text TEXT NOT NULL,
+    position DOUBLE PRECISION NOT NULL,
+    done BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now()
+  )`;
+  await q`CREATE TABLE IF NOT EXISTS notes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+  )`;
   inited = true;
 }
 
@@ -94,4 +107,79 @@ export async function getLastSeen(account: string): Promise<number | null> {
 export async function setLastSeen(account: string, unseen: number): Promise<void> {
   await sql()`INSERT INTO last_seen (account, unseen, checked_at) VALUES (${account}, ${unseen}, now())
     ON CONFLICT (account) DO UPDATE SET unseen=EXCLUDED.unseen, checked_at=now()`;
+}
+
+// --- Quest (task list) ---
+
+export interface Task {
+  id: string;
+  text: string;
+  done: boolean;
+  position: number;
+  created_at: string;
+}
+
+export async function listTasks(): Promise<Task[]> {
+  await ensureDb();
+  const rows = await sql()`SELECT id, text, done, position, created_at FROM tasks ORDER BY done ASC, position ASC`;
+  return rows as unknown as Task[];
+}
+
+export async function addTasks(texts: string[]): Promise<number> {
+  await ensureDb();
+  let added = 0;
+  for (const text of texts.map((t) => t.trim()).filter(Boolean)) {
+    await sql()`INSERT INTO tasks (text, position)
+      SELECT ${text}, COALESCE(MAX(position), 0) + 1 FROM tasks`;
+    added++;
+  }
+  return added;
+}
+
+export async function setTaskDone(id: string, done: boolean): Promise<void> {
+  await sql()`UPDATE tasks SET done=${done} WHERE id=${id}`;
+}
+
+export async function taskToBottom(id: string): Promise<void> {
+  await sql()`UPDATE tasks SET position = (SELECT COALESCE(MAX(position), 0) + 1 FROM tasks) WHERE id=${id}`;
+}
+
+export async function reorderTasks(ids: string[]): Promise<void> {
+  for (const [i, id] of ids.entries()) {
+    await sql()`UPDATE tasks SET position=${i} WHERE id=${id}`;
+  }
+}
+
+export async function purgeDoneTasks(): Promise<number> {
+  const rows = await sql()`DELETE FROM tasks WHERE done=true RETURNING id`;
+  return rows.length;
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  await sql()`DELETE FROM tasks WHERE id=${id}`;
+}
+
+// --- Fourre-tout (notes) ---
+
+export interface Note {
+  id: string;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
+export async function listNotes(): Promise<Note[]> {
+  await ensureDb();
+  const rows = await sql()`SELECT id, title, body, created_at FROM notes ORDER BY created_at DESC`;
+  return rows as unknown as Note[];
+}
+
+export async function addNote(title: string, body: string): Promise<Note> {
+  await ensureDb();
+  const rows = await sql()`INSERT INTO notes (title, body) VALUES (${title}, ${body}) RETURNING id, title, body, created_at`;
+  return rows[0] as unknown as Note;
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  await sql()`DELETE FROM notes WHERE id=${id}`;
 }

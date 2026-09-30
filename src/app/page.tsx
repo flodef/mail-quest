@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook } from "@tabler/icons-react";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
 import InboxRow, { fmtDate } from "@/components/InboxRow";
 import Victory from "@/components/Victory";
+import QuestPanel from "@/components/QuestPanel";
+import NotesPanel from "@/components/NotesPanel";
+import type { Task, Note } from "@/lib/db";
 
 interface InboxItem { account: string; uid: number; from: string; fromEmail: string; subject: string; date: string | null; unread: boolean }
 interface OverviewAccount extends AccountBadge { latest?: InboxItem[] }
@@ -32,18 +35,26 @@ export default function Game() {
   const [improveText, setImproveText] = useState<string | null>(null);
   const [muted, setMuted] = useState<{ account: string; sender: string }[]>([]);
   const [confirm, setConfirm] = useState<{ label: string; run: () => void } | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [showQuest, setShowQuest] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
 
   const say = (msg: string, Icon?: typeof IconSword) => { setToast({ msg, Icon }); setTimeout(() => setToast(null), 2500); };
 
   const refresh = useCallback(async () => {
-    const [ov, dr] = await Promise.all([
+    const [ov, dr, tk, nt] = await Promise.all([
       fetch("/api/overview").then((r) => r.json()),
       fetch("/api/drafts").then((r) => r.json()),
+      fetch("/api/tasks").then((r) => (r.ok ? r.json() : { tasks: [] })),
+      fetch("/api/notes").then((r) => (r.ok ? r.json() : { notes: [] })),
     ]);
     setAccounts(ov.accounts ?? []);
     setMuted(ov.muted ?? []);
     setPile(dr.active ?? []);
     setAside(dr.aside ?? []);
+    setTasks(tk.tasks ?? []);
+    setNotes(nt.notes ?? []);
     setLoading(false);
   }, []);
 
@@ -239,6 +250,64 @@ export default function Game() {
     }
   }
 
+  async function questPatch(body: Record<string, unknown>) {
+    await fetch("/api/tasks", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  }
+
+  async function questAdd(text: string) {
+    setBusy("quest");
+    await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+    await refresh();
+    setBusy(null);
+  }
+
+  function questDone(id: string) {
+    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, done: true } : t)));
+    void questPatch({ id, done: true });
+    say("Quête accomplie !", IconSword);
+  }
+
+  function questBottom(id: string) {
+    setTasks((ts) => {
+      const max = Math.max(0, ...ts.map((t) => t.position));
+      return ts.map((t) => (t.id === id ? { ...t, position: max + 1 } : t));
+    });
+    void questPatch({ id, toBottom: true });
+  }
+
+  function questReorder(ids: string[]) {
+    setTasks((ts) => {
+      const pos = new Map(ids.map((id, i) => [id, i]));
+      return ts.map((t) => (pos.has(t.id) ? { ...t, position: pos.get(t.id)! } : t));
+    });
+    void questPatch({ order: ids });
+  }
+
+  const questPurge = () => setConfirm({
+    label: `Purger les ${tasks.filter((t) => t.done).length} quête(s) accomplie(s) ?`,
+    run: async () => {
+      await fetch("/api/tasks?purge=1", { method: "DELETE" });
+      setTasks((ts) => ts.filter((t) => !t.done));
+      say("Trophées purgés", IconSkull);
+    },
+  });
+
+  async function noteAdd(body: string) {
+    setBusy("note");
+    const r = await fetch("/api/notes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body }) });
+    if (r.ok) {
+      const j = await r.json();
+      if (j.note) setNotes((ns) => [j.note, ...ns]);
+      say("Note rangée au fourre-tout", IconNotebook);
+    }
+    setBusy(null);
+  }
+
+  function noteDelete(id: string) {
+    setNotes((ns) => ns.filter((n) => n.id !== id));
+    void fetch(`/api/notes?id=${id}`, { method: "DELETE" });
+  }
+
   const clearJar = () => setConfirm({
     label: `Briser la jarre ? Les ${aside.length} missive(s) fileront à la potence.`,
     run: doClearJar,
@@ -323,9 +392,17 @@ export default function Game() {
 
       <div className="flex items-center justify-between">
         <div className="font-pixel text-[9px] opacity-80">MISSIVES À EXPÉDIER : {pile.length}</div>
-        <button className="btn-pixel ghost !px-2 !py-1 text-[8px] flex items-center gap-1" onClick={() => setShowAside(!showAside)}>
-          <IconPackage size={14} /> JARRE ({aside.length})
-        </button>
+        <div className="flex gap-1.5">
+          <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowNotes(true)} title="Fourre-tout">
+            <IconNotebook size={16} /> {notes.length}
+          </button>
+          <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowQuest(true)} title="Quêtes">
+            <IconSword size={16} /> {tasks.filter((t) => !t.done).length}
+          </button>
+          <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowAside(!showAside)} title="Jarre">
+            <IconPackage size={16} /> {aside.length}
+          </button>
+        </div>
       </div>
 
       <div className="relative flex-1 min-h-[340px]">
@@ -366,6 +443,29 @@ export default function Game() {
           <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "aside")}><IconPackage size={24} /> Jarre</button>
           <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "send")}><IconSword size={24} /> Expédier</button>
         </div>
+      )}
+
+      {showQuest && (
+        <QuestPanel
+          tasks={tasks}
+          busy={!!busy}
+          onClose={() => setShowQuest(false)}
+          onAdd={(t) => void questAdd(t)}
+          onDone={questDone}
+          onBottom={questBottom}
+          onReorder={questReorder}
+          onPurge={questPurge}
+        />
+      )}
+
+      {showNotes && (
+        <NotesPanel
+          notes={notes}
+          busy={!!busy}
+          onClose={() => setShowNotes(false)}
+          onAdd={(b) => void noteAdd(b)}
+          onDelete={noteDelete}
+        />
       )}
 
       {/* Pile "de côté" */}

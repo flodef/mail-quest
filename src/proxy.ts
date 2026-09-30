@@ -12,6 +12,11 @@ async function expectedToken(): Promise<string | null> {
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return NextResponse.next();
+  // Bot push (OpenClaw) : Bearer token sur les routes tasks/notes uniquement
+  if (["/api/tasks", "/api/notes"].some((p) => pathname.startsWith(p))) {
+    const t = process.env.BOT_API_TOKEN;
+    if (t && req.headers.get("authorization") === `Bearer ${t}`) return NextResponse.next();
+  }
   const token = await expectedToken();
   if (!token) return NextResponse.next();
   if (req.cookies.get("mq_session")?.value === token) return NextResponse.next();

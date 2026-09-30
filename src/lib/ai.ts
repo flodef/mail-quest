@@ -53,3 +53,32 @@ export async function generateReply(opts: { from: string; subject: string; body:
   if (!text) throw new Error("Réponse IA vide");
   return text;
 }
+
+const fallbackTitle = (body: string) => (body.length > 60 ? body.slice(0, 60).trim() + "…" : body.trim());
+
+export async function generateTitle(body: string): Promise<string> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return fallbackTitle(body);
+  const model = process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
+  const prompt = [
+    "Donne un titre très court (3 à 6 mots, sans ponctuation finale) pour cette note.",
+    "Réponds UNIQUEMENT avec le titre, dans la langue de la note.",
+    "",
+    "Note:",
+    body.slice(0, 3000),
+  ].join("\n");
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) return fallbackTitle(body);
+    const j = (await r.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim();
+    return text ? text.slice(0, 200) : fallbackTitle(body);
+  } catch {
+    return fallbackTitle(body);
+  }
+}
