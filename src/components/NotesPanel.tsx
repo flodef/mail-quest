@@ -126,6 +126,7 @@ export default function NotesPanel({
 }) {
   const [input, setInput] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const downOnBackdrop = useRef(false);
   const open = notes.find((n) => n.id === openId) ?? null;
 
   function submit() {
@@ -136,7 +137,13 @@ export default function NotesPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/70 flex items-end" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-40 bg-black/70 flex items-end"
+      onPointerDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
+      onClick={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="font-pixel text-[9px] text-[var(--gold-bright)]">📒 FOURRE-TOUT ({notes.length})</div>

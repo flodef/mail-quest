@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Reorder } from "framer-motion";
 import { IconPlus, IconSkull, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
@@ -28,6 +28,9 @@ export default function QuestPanel({
   onPurge: () => void;
 }) {
   const [input, setInput] = useState("");
+  // Un swipe de ligne relâché hors du panneau produit un click sur le backdrop
+  // — ne fermer que si le press a aussi commencé sur le backdrop.
+  const downOnBackdrop = useRef(false);
   const active = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
   const visible = active.slice(0, VISIBLE);
@@ -45,7 +48,13 @@ export default function QuestPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/70 flex items-end" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-40 bg-black/70 flex items-end"
+      onPointerDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
+      onClick={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="font-pixel text-[9px] text-[var(--gold-bright)]">⚔ QUÊTES ({active.length})</div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook } from "@tabler/icons-react";
 import Hud, { type AccountBadge } from "@/components/Hud";
@@ -39,6 +39,15 @@ export default function Game() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [showQuest, setShowQuest] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  // Ne fermer un overlay au clic que si le press a commencé sur le backdrop
+  // (un swipe/drag relâché hors du panneau produit un click backdrop).
+  const backdropDown = useRef(false);
+  const backdropProps = (onClose: () => void) => ({
+    onPointerDown: (e: React.PointerEvent) => (backdropDown.current = e.target === e.currentTarget),
+    onClick: (e: React.MouseEvent) => {
+      if (backdropDown.current && e.target === e.currentTarget) onClose();
+    },
+  });
 
   const say = (msg: string, Icon?: typeof IconSword) => { setToast({ msg, Icon }); setTimeout(() => setToast(null), 2500); };
 
@@ -518,7 +527,7 @@ export default function Game() {
 
       {/* Pile "de côté" */}
       {showAside && (
-        <div className="fixed inset-0 z-40 bg-black/70 flex items-end" onClick={() => setShowAside(false)}>
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-end" {...backdropProps(() => setShowAside(false))}>
           <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div className="font-pixel text-[9px] text-[var(--gold-bright)]">LA JARRE AUX MISSIVES ({aside.length})</div>
@@ -548,7 +557,7 @@ export default function Game() {
 
       {/* Tiroir inbox */}
       {inbox && (
-        <div className="fixed inset-0 z-40 bg-black/70 flex items-end" onClick={() => { setInboxOf(null); setMenuFor(null); }}>
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-end" {...backdropProps(() => { setInboxOf(null); setMenuFor(null); })}>
           <div className="panel w-full max-w-md mx-auto p-4 max-h-[70dvh] overflow-y-auto" onClick={(e) => { e.stopPropagation(); setMenuFor(null); }}>
             <div className="flex justify-between items-center mb-3">
               <div className="font-pixel text-[9px]" style={{ color: inbox.color }}>{inbox.label}</div>
@@ -614,7 +623,7 @@ export default function Game() {
 
       {/* Lecture message inbox */}
       {readingMsg && (
-        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" onClick={() => { setReadingMsg(null); setReadingCtx(null); setImproveText(null); }}>
+        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" {...backdropProps(() => { setReadingMsg(null); setReadingCtx(null); setImproveText(null); })}>
           <div className="card-parchment max-w-md w-full max-h-[80dvh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1 break-all">DE : {readingMsg.from}</div>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3 break-words">SUJET : {readingMsg.subject}</div>
@@ -663,7 +672,7 @@ export default function Game() {
 
       {/* Lecture draft */}
       {reading && (
-        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" onClick={() => setReading(null)}>
+        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" {...backdropProps(() => setReading(null))}>
           <div className="card-parchment max-w-md w-full max-h-[80dvh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1 break-all">À : {reading.to}</div>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3 break-words">SUJET : {reading.subject}</div>
