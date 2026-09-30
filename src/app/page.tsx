@@ -80,10 +80,23 @@ export default function Game() {
     say("🔔 Notifications activées");
   }
 
+  const sameDraft = (x: Draft, d: Draft) => x.account === d.account && x.uid === d.uid;
+
   async function act(d: Draft, action: "send" | "aside" | "restore") {
     const key = `${d.account}:${d.uid}`;
     if (busy) return;
     setBusy(key);
+    // UI optimiste : on retire/déplace la carte tout de suite ; en cas d'échec, refresh() la restaure
+    if (action === "aside") {
+      setPile((p) => p.filter((x) => !sameDraft(x, d)));
+      setAside((p) => (p.some((x) => sameDraft(x, d)) ? p : [d, ...p]));
+    } else if (action === "restore") {
+      setAside((p) => p.filter((x) => !sameDraft(x, d)));
+      setPile((p) => (p.some((x) => sameDraft(x, d)) ? p : [d, ...p]));
+    } else {
+      setPile((p) => p.filter((x) => !sameDraft(x, d)));
+      setAside((p) => p.filter((x) => !sameDraft(x, d)));
+    }
     try {
       if (action === "send") {
         const r = await fetch("/api/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
@@ -91,10 +104,12 @@ export default function Game() {
         if (!r.ok) throw new Error(j.error);
         say("⚔ Missive envoyée !");
       } else if (action === "aside") {
-        await fetch("/api/aside", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
+        const r = await fetch("/api/aside", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
         say("🏺 Mise de côté");
       } else {
-        await fetch("/api/aside", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
+        const r = await fetch("/api/aside", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
         say("↩ De retour dans la quête");
       }
       await refresh();
@@ -104,6 +119,18 @@ export default function Game() {
     } finally {
       setBusy(null);
     }
+  }
+
+  // Retire des messages du tiroir inbox + ajuste le compteur de non-lus (optimiste)
+  function dropInboxItems(accountId: string, pred: (m: InboxItem) => boolean) {
+    setAccounts((prev) =>
+      prev.map((a) => {
+        if (a.id !== accountId) return a;
+        const latest = a.latest ?? [];
+        const removedUnread = latest.filter((x) => pred(x) && x.unread).length;
+        return { ...a, latest: latest.filter((x) => !pred(x)), unseen: Math.max(0, (a.unseen ?? 0) - removedUnread) };
+      }),
+    );
   }
 
   async function read(d: Draft) {
@@ -142,6 +169,8 @@ export default function Game() {
     const d = readingCtx;
     if (!d || !improveText?.trim()) return;
     setBusy("improve");
+    setPile((p) => p.filter((x) => !sameDraft(x, d)));
+    setAside((p) => p.filter((x) => !sameDraft(x, d)));
     try {
       const r = await fetch("/api/draft/improve", {
         method: "POST",
@@ -162,6 +191,7 @@ export default function Game() {
 
   async function doClearJar() {
     setBusy("jar");
+    setAside([]);
     try {
       const r = await fetch("/api/aside/clear", { method: "POST" });
       const j = await r.json().catch(() => ({}));
@@ -199,13 +229,17 @@ export default function Game() {
         if (!r.ok) throw new Error(j.error ?? "Échec");
         say("✨ Missive générée !");
       } else if (action === "mute") {
+        dropInboxItems(m.account, (x) => x.fromEmail === m.fromEmail);
+        setMuted((p) => (p.some((x) => x.account === m.account && x.sender === m.fromEmail) ? p : [...p, { account: m.account, sender: m.fromEmail }]));
         const r = await fetch("/api/mute", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: m.account, sender: m.fromEmail }) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
         say("🔇 Expéditeur masqué");
       } else if (action === "unmute") {
+        setMuted((p) => p.filter((x) => !(x.account === m.account && x.sender === m.fromEmail)));
         await fetch("/api/mute", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: m.account, sender: m.fromEmail }) });
         say("🔔 Expéditeur rétabli");
       } else if (action === "delete") {
+        dropInboxItems(m.account, (x) => x.uid === m.uid);
         const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`, { method: "DELETE" });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
         say("🗑 Message supprimé");
@@ -218,6 +252,7 @@ export default function Game() {
         return;
       } else {
         // deleteAllGo — après confirmation
+        dropInboxItems(m.account, (x) => x.fromEmail === m.fromEmail);
         const r = await fetch(`/api/message?account=${m.account}&sender=${encodeURIComponent(m.fromEmail)}`, { method: "DELETE" });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Échec");
