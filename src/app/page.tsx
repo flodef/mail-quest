@@ -321,7 +321,9 @@ export default function Game() {
   function questBottom(id: string) {
     setTasks((ts) => {
       const max = Math.max(0, ...ts.map((t) => t.position));
-      return ts.map((t) => (t.id === id ? { ...t, position: max + 1 } : t));
+      return ts
+        .map((t) => (t.id === id ? { ...t, position: max + 1 } : t))
+        .sort((a, b) => (a.done === b.done ? a.position - b.position : a.done ? 1 : -1));
     });
     void questPatch({ id, toBottom: true });
   }
@@ -329,7 +331,9 @@ export default function Game() {
   function questReorder(ids: string[]) {
     setTasks((ts) => {
       const pos = new Map(ids.map((id, i) => [id, i]));
-      return ts.map((t) => (pos.has(t.id) ? { ...t, position: pos.get(t.id)! } : t));
+      return ts
+        .map((t) => (pos.has(t.id) ? { ...t, position: pos.get(t.id)! } : t))
+        .sort((a, b) => (a.done === b.done ? a.position - b.position : a.done ? 1 : -1));
     });
     void questPatch({ order: ids });
   }
