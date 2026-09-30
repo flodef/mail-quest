@@ -470,26 +470,31 @@ export default function Game() {
 
       {/* Pile "de côté" */}
       {showAside && (
-        <div className="panel p-4 flex flex-col gap-3 max-h-[40dvh] overflow-y-auto">
-          <div className="flex items-center justify-between">
-            <div className="font-pixel text-[8px] text-[var(--gold-bright)]">LA JARRE AUX MISSIVES</div>
-            {aside.length > 0 && (
-              <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] flex items-center gap-1" disabled={!!busy} onClick={clearJar}>
-                <IconTrash size={16} /> Briser la jarre
-              </button>
-            )}
-          </div>
-          {aside.length === 0 && <div className="opacity-60">La jarre est vide.</div>}
-          {aside.map((d) => (
-            <div key={`${d.account}:${d.uid}`} className="flex items-center gap-3 bg-[var(--shadow)] p-3 border border-[#3a5a2a]">
-              <div className="flex-1 min-w-0">
-                <div className="truncate text-lg">{d.to} — {d.subject}</div>
-                <div className="font-pixel text-[7px] opacity-60">{d.account}</div>
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-end" onClick={() => setShowAside(false)}>
+          <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div className="font-pixel text-[9px] text-[var(--gold-bright)]">LA JARRE AUX MISSIVES ({aside.length})</div>
+              <div className="flex items-center gap-2">
+                {aside.length > 0 && (
+                  <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] flex items-center gap-1" disabled={!!busy} onClick={clearJar}>
+                    <IconTrash size={16} /> Briser la jarre
+                  </button>
+                )}
+                <button className="btn-pixel ghost !px-2" onClick={() => setShowAside(false)}><IconX size={18} /></button>
               </div>
-              <button className="btn-pixel !py-2 !px-2.5" title="Renvoyer en quête" disabled={!!busy} onClick={() => act(d, "restore")}><IconArrowBackUp size={20} /></button>
-              <button className="btn-pixel danger !py-2 !px-2.5" title="Expédier" disabled={!!busy} onClick={() => act(d, "send")}><IconSword size={20} /></button>
             </div>
-          ))}
+            {aside.length === 0 && <div className="opacity-60">La jarre est vide.</div>}
+            {aside.map((d) => (
+              <div key={`${d.account}:${d.uid}`} className="flex items-center gap-3 bg-[var(--shadow)] p-3 border border-[#3a5a2a]">
+                <div className="flex-1 min-w-0">
+                  <div className="truncate text-lg">{d.to} — {d.subject}</div>
+                  <div className="font-pixel text-[7px] opacity-60">{d.account}</div>
+                </div>
+                <button className="btn-pixel !py-2 !px-2.5" title="Renvoyer en quête" disabled={!!busy} onClick={() => act(d, "restore")}><IconArrowBackUp size={20} /></button>
+                <button className="btn-pixel danger !py-2 !px-2.5" title="Expédier" disabled={!!busy} onClick={() => act(d, "send")}><IconSword size={20} /></button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
