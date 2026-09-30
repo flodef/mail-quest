@@ -34,9 +34,7 @@ export default function QuestPanel({
   const [showReserve, setShowReserve] = useState(false);
   const active = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
-  const visible = active.slice(0, VISIBLE);
-  const reserve = active.slice(VISIBLE);
-  const hidden = reserve.length;
+  const hidden = active.length - VISIBLE;
 
   function submit() {
     const t = input.trim();
@@ -45,22 +43,15 @@ export default function QuestPanel({
     onAdd(t);
   }
 
+  // Replié : on réordonne dans le top 5, la réserve reste en place.
   function handleReorder(next: Task[]) {
-    onReorder([...next.map((t) => t.id), ...reserve.map((t) => t.id)]);
+    onReorder([...next.map((t) => t.id), ...active.slice(VISIBLE).map((t) => t.id)]);
   }
 
-  function handleReserveReorder(next: Task[]) {
-    onReorder([...visible.map((t) => t.id), ...next.map((t) => t.id)]);
-  }
-
-  // Promotion : la quête entre en position 5, l'ancienne n°5 glisse en 6.
-  function promote(id: string) {
-    onReorder([
-      ...visible.slice(0, VISIBLE - 1).map((t) => t.id),
-      id,
-      ...visible.slice(VISIBLE - 1).map((t) => t.id),
-      ...reserve.filter((t) => t.id !== id).map((t) => t.id),
-    ]);
+  // Déplié : liste unique — glisser une quête de réserve dans le top 5
+  // l'insère à cette position et pousse l'ancienne n°5 dans la réserve.
+  function handleFullReorder(next: Task[]) {
+    onReorder(next.map((t) => t.id));
   }
 
   return (
@@ -88,42 +79,33 @@ export default function QuestPanel({
           <button className="btn-pixel !px-3" disabled={busy || !input.trim()} onClick={submit}><IconPlus size={18} /></button>
         </div>
 
-        <SortableList
-          items={visible}
-          onReorder={handleReorder}
-          renderItem={(t, grip) => (
-            <ItemRow item={t} grip={grip} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
-          )}
-        />
+        {!showReserve && (
+          <SortableList
+            items={active.slice(0, VISIBLE)}
+            onReorder={handleReorder}
+            renderItem={(t, grip) => (
+              <ItemRow item={t} grip={grip} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
+            )}
+          />
+        )}
+        {showReserve && (
+          <SortableList
+            items={active}
+            onReorder={handleFullReorder}
+            renderItem={(t, grip, i) => (
+              <ItemRow item={t} grip={grip} dim={i >= VISIBLE} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
+            )}
+          />
+        )}
         {active.length === 0 && <div className="opacity-60">Aucune quête en cours.</div>}
         {hidden > 0 && (
-          <>
-            <button
-              className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
-              onClick={() => setShowReserve((s) => !s)}
-            >
-              <IconChevronDown size={14} className={`transition-transform ${showReserve ? "rotate-180" : ""}`} />
-              {hidden} QUÊTE(S) EN RÉSERVE
-            </button>
-            {showReserve && (
-              <SortableList
-                items={reserve}
-                onReorder={handleReserveReorder}
-                renderItem={(t, grip) => (
-                  <ItemRow
-                    item={t}
-                    grip={grip}
-                    dim
-                    onPromote={() => promote(t.id)}
-                    doneLabel="⚔ QUÊTE FAITE"
-                    bottomLabel="⇣ FOND DE PILE"
-                    onDone={() => onDone(t.id)}
-                    onBottom={() => onBottom(t.id)}
-                  />
-                )}
-              />
-            )}
-          </>
+          <button
+            className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
+            onClick={() => setShowReserve((s) => !s)}
+          >
+            <IconChevronDown size={14} className={`transition-transform ${showReserve ? "rotate-180" : ""}`} />
+            {hidden} QUÊTE(S) EN RÉSERVE
+          </button>
         )}
         <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · QUÊTE FAITE ▶</div>
 

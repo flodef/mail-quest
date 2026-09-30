@@ -20,7 +20,7 @@ export default function SortableList<T>({
 }: {
   items: T[];
   onReorder: (next: T[]) => void;
-  renderItem: (item: T, grip: GripProps) => ReactNode;
+  renderItem: (item: T, grip: GripProps, index: number) => ReactNode;
 }) {
   const [listEl, setListEl] = useState<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -75,7 +75,7 @@ export default function SortableList<T>({
             className={drag && i === drag.index ? "relative z-20 opacity-95 shadow-[4px_4px_0_rgba(0,0,0,0.6)]" : "relative"}
             style={drag && i === drag.index ? { transform: `translateY(${drag.dy}px)` } : undefined}
           >
-            {renderItem(item, grip(i))}
+            {renderItem(item, grip(i), i)}
           </div>
         </Fragment>
       ))}
