@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconPackage, IconLogout, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull } from "@tabler/icons-react";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
 import InboxRow, { fmtDate } from "@/components/InboxRow";
@@ -15,7 +14,6 @@ interface DraftBody extends Draft { html: string | null; text: string | null; cc
 interface MsgBody extends InboxItem { to: string; html: string | null; text: string | null }
 
 export default function Game() {
-  const router = useRouter();
   const [accounts, setAccounts] = useState<OverviewAccount[]>([]);
   const [pile, setPile] = useState<Draft[]>([]);
   const [aside, setAside] = useState<Draft[]>([]);
@@ -24,6 +22,8 @@ export default function Game() {
   const [showAside, setShowAside] = useState(false);
   const [inboxOf, setInboxOf] = useState<string | null>(null);
   const [pushOn, setPushOn] = useState<boolean | null>(null);
+  const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [canInstall, setCanInstall] = useState(false);
   const [toast, setToast] = useState<{ msg: string; Icon?: typeof IconSword } | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuFor, setMenuFor] = useState<number | null>(null);
@@ -52,14 +52,48 @@ export default function Game() {
     return () => clearTimeout(id);
   }, [refresh]);
 
-  // Push registration state
+  // Enregistre le SW dès le chargement (installabilité PWA + push), puis lit l'abonnement
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    navigator.serviceWorker.ready.then(async (reg) => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").then(async (reg) => {
+      if (!("PushManager" in window)) return;
       const sub = await reg.pushManager.getSubscription();
       setPushOn(!!sub);
     });
   }, []);
+
+  // Bouton d'installation : visible tant que la PWA n'est pas installée
+  useEffect(() => {
+    const mql = window.matchMedia("(display-mode: standalone)");
+    const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    if (mql.matches || iosStandalone) return;
+    // iOS ne déclenche jamais beforeinstallprompt : on affiche le bouton (installation manuelle)
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) setTimeout(() => setCanInstall(true), 0);
+    const onPrompt = (e: Event) => { e.preventDefault(); setInstallEvt(e as BeforeInstallPromptEvent); setCanInstall(true); };
+    const onDone = () => { setInstallEvt(null); setCanInstall(false); };
+    const onMode = (e: MediaQueryListEvent) => { if (e.matches) onDone(); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onDone);
+    mql.addEventListener("change", onMode);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onDone);
+      mql.removeEventListener("change", onMode);
+    };
+  }, []);
+
+  async function installApp() {
+    if (installEvt) {
+      try {
+        await installEvt.prompt();
+        const { outcome } = await installEvt.userChoice;
+        if (outcome === "accepted") setCanInstall(false);
+      } catch {}
+      setInstallEvt(null);
+      return;
+    }
+    say("Installe l'app via le menu du navigateur : « Ajouter à l'écran d'accueil »", IconDeviceMobileDown);
+  }
 
   async function togglePush() {
     const reg = await navigator.serviceWorker.register("/sw.js");
@@ -275,11 +309,13 @@ export default function Game() {
       <header className="flex items-center justify-between">
         <h1 className="font-pixel text-[var(--gold-bright)] text-xs">MAIL QUEST</h1>
         <div className="flex gap-2">
+          {canInstall && (
+            <button className="btn-pixel ghost !px-2" onClick={() => void installApp()} title="Installer l'app"><IconDeviceMobileDown size={18} /></button>
+          )}
           <button className="btn-pixel ghost !px-2" onClick={togglePush} title="Notifications">
             {pushOn ? <IconBell size={18} /> : <IconBellOff size={18} />}
           </button>
           <button className="btn-pixel ghost !px-2" onClick={refresh} title="Rafraîchir"><IconRefresh size={18} /></button>
-          <button className="btn-pixel ghost !px-2" onClick={async () => { await fetch("/api/auth", { method: "DELETE" }); router.push("/login"); }} title="Quitter"><IconLogout size={18} /></button>
         </div>
       </header>
 
@@ -520,6 +556,11 @@ export default function Game() {
       )}
     </main>
   );
+}
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
 function urlBase64ToUint8Array(base64String: string) {

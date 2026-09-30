@@ -16,3 +16,8 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(clients.openWindow(event.notification.data?.url ?? "/"));
 });
+
+// Pass-through : requis par certains navigateurs pour rendre l'app installable
+self.addEventListener("fetch", (event) => {
+  event.respondWith(fetch(event.request));
+});
