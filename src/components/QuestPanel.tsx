@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Reorder } from "framer-motion";
 import { IconPlus, IconSkull, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
+import SortableList from "@/components/SortableList";
 import type { Task } from "@/lib/db";
 
 const VISIBLE = 5;
@@ -72,11 +72,13 @@ export default function QuestPanel({
           <button className="btn-pixel !px-3" disabled={busy || !input.trim()} onClick={submit}><IconPlus size={18} /></button>
         </div>
 
-        <Reorder.Group axis="y" values={visible} onReorder={handleReorder} className="flex flex-col gap-2">
-          {visible.map((t) => (
-            <ItemRow key={t.id} item={t} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
-          ))}
-        </Reorder.Group>
+        <SortableList
+          items={visible}
+          onReorder={handleReorder}
+          renderItem={(t, grip) => (
+            <ItemRow item={t} grip={grip} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
+          )}
+        />
         {active.length === 0 && <div className="opacity-60">Aucune quête en cours.</div>}
         {hidden > 0 && <div className="font-pixel text-[7px] opacity-60 text-center">+ {hidden} QUÊTE(S) EN RÉSERVE — TERMINE OU REPOUSSE POUR LES FAIRE MONTER</div>}
         <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · QUÊTE FAITE ▶</div>

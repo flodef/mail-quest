@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Reorder } from "framer-motion";
 import { IconArrowLeft, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
+import SortableList from "@/components/SortableList";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
 import type { Note } from "@/lib/db";
 
@@ -81,11 +81,13 @@ function NoteDetail({
         <button className="btn-pixel !px-3" disabled={busy || !input.trim()} onClick={submit}><IconPlus size={18} /></button>
       </div>
 
-      <Reorder.Group axis="y" values={active} onReorder={(next: Item[]) => save([...next, ...done])} className="flex flex-col gap-2">
-        {active.map((i) => (
-          <ItemRow key={i.id} item={i} onDone={() => itemDone(i.id)} onBottom={() => itemBottom(i.id)} />
-        ))}
-      </Reorder.Group>
+      <SortableList
+        items={active}
+        onReorder={(next) => save([...next, ...done])}
+        renderItem={(i, grip) => (
+          <ItemRow item={i} grip={grip} onDone={() => itemDone(i.id)} onBottom={() => itemBottom(i.id)} />
+        )}
+      />
       {active.length === 0 && items.length === 0 && <div className="opacity-60">Note vide.</div>}
       {active.length === 0 && items.length > 0 && <div className="opacity-60">Tout est fait ✅</div>}
       <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · FAIT ▶</div>
