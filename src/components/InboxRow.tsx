@@ -53,10 +53,10 @@ export default function InboxRow({
       onDragEnd={onDragEnd}
     >
       <motion.div className="absolute inset-y-0 left-0 w-full flex items-center pl-3 font-pixel text-[8px] text-[#7fe08a]" style={{ opacity: genOpacity }}>
-        <IconWand size={18} className="mr-1" /> MISSIVE
+        <IconWand size={18} className="mr-1" /> FORGER
       </motion.div>
       <motion.div className="absolute inset-y-0 right-0 w-full flex items-center justify-end pr-3 font-pixel text-[8px] text-[#ff8ba0]" style={{ opacity: delOpacity }}>
-        SUPPRIMER <IconTrash size={18} className="ml-1" />
+        CORBEILLE <IconTrash size={18} className="ml-1" />
       </motion.div>
       <div className={`relative py-3 ${unread ? "font-bold" : "opacity-60"}`}>
         <button className="w-full text-left" disabled={disabled} onClick={onOpen}>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconPackage, IconLogout, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconPackage, IconLogout, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull } from "@tabler/icons-react";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
 import InboxRow, { fmtDate } from "@/components/InboxRow";
@@ -24,7 +24,7 @@ export default function Game() {
   const [showAside, setShowAside] = useState(false);
   const [inboxOf, setInboxOf] = useState<string | null>(null);
   const [pushOn, setPushOn] = useState<boolean | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; Icon?: typeof IconSword } | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuFor, setMenuFor] = useState<number | null>(null);
   const [readingMsg, setReadingMsg] = useState<MsgBody | null>(null);
@@ -33,7 +33,7 @@ export default function Game() {
   const [muted, setMuted] = useState<{ account: string; sender: string }[]>([]);
   const [confirm, setConfirm] = useState<{ label: string; run: () => void } | null>(null);
 
-  const say = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+  const say = (msg: string, Icon?: typeof IconSword) => { setToast({ msg, Icon }); setTimeout(() => setToast(null), 2500); };
 
   const refresh = useCallback(async () => {
     const [ov, dr] = await Promise.all([
@@ -72,12 +72,12 @@ export default function Game() {
       return;
     }
     const perm = await Notification.requestPermission();
-    if (perm !== "granted") { say("Notifications refusées"); return; }
+    if (perm !== "granted") { say("Le héraut restera muet", IconBellOff); return; }
     const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!;
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
     await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sub) });
     setPushOn(true);
-    say("🔔 Notifications activées");
+    say("Le héraut te préviendra", IconBell);
   }
 
   const sameDraft = (x: Draft, d: Draft) => x.account === d.account && x.uid === d.uid;
@@ -102,19 +102,19 @@ export default function Game() {
         const r = await fetch("/api/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error);
-        say("⚔ Missive envoyée !");
+        say("La missive s'envole !", IconSword);
       } else if (action === "aside") {
         const r = await fetch("/api/aside", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
-        say("🏺 Mise de côté");
+        say("Rangée dans la jarre", IconPackage);
       } else {
         const r = await fetch("/api/aside", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(d) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
-        say("↩ De retour dans la quête");
+        say("De retour dans la quête", IconArrowBackUp);
       }
       await refresh();
     } catch (e) {
-      say(`💀 ${e instanceof Error ? e.message : "Erreur"}`);
+      say(e instanceof Error ? e.message : "Erreur", IconSkull);
       await refresh();
     } finally {
       setBusy(null);
@@ -162,7 +162,7 @@ export default function Game() {
   async function readOriginal(d: Draft) {
     const r = await fetch(`/api/message?account=${d.account}&to=${encodeURIComponent(d.to)}&subject=${encodeURIComponent(d.subject)}`);
     if (r.ok) { setReadingCtx(d); setImproveText(null); setReadingMsg(await r.json()); }
-    else say("💀 Message original introuvable");
+    else say("Parchemin introuvable", IconSkull);
   }
 
   async function improveMissive() {
@@ -179,11 +179,11 @@ export default function Game() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "Échec");
-      say("✨ Missive réécrite !");
+      say("Missive reforgée !", IconWand);
       setReadingMsg(null); setReadingCtx(null); setImproveText(null);
       await refresh();
     } catch (e) {
-      say(`💀 ${e instanceof Error ? e.message : "Erreur"}`);
+      say(e instanceof Error ? e.message : "Erreur", IconSkull);
     } finally {
       setBusy(null);
     }
@@ -196,24 +196,24 @@ export default function Game() {
       const r = await fetch("/api/aside/clear", { method: "POST" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "Échec");
-      say(`🏺 Jarre vidée (${j.cleared ?? 0})`);
+      say(`Jarre brisée : ${j.cleared ?? 0} missive(s) jetée(s)`, IconPackage);
       await refresh();
     } catch (e) {
-      say(`💀 ${e instanceof Error ? e.message : "Erreur"}`);
+      say(e instanceof Error ? e.message : "Erreur", IconSkull);
     } finally {
       setBusy(null);
     }
   }
 
   const clearJar = () => setConfirm({
-    label: `Jeter les ${aside.length} missive(s) de la jarre à la Corbeille ?`,
+    label: `Briser la jarre ? Les ${aside.length} missive(s) fileront à la Corbeille.`,
     run: doClearJar,
   });
 
   async function readMsg(m: InboxItem) {
     const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
     if (r.ok) { setReadingCtx(null); setImproveText(null); setReadingMsg(await r.json()); }
-    else say("💀 Lecture impossible");
+    else say("Parchemin illisible", IconSkull);
   }
 
   async function msgAction(m: InboxItem, action: "generate" | "mute" | "delete" | "deleteAll" | "deleteAllGo" | "unmute") {
@@ -223,30 +223,30 @@ export default function Game() {
     setBusy(key);
     try {
       if (action === "generate") {
-        say("✨ Génération de la missive…");
+        say("La missive se forge…", IconWand);
         const r = await fetch("/api/message/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: m.account, uid: m.uid }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Échec");
-        say("✨ Missive générée !");
+        say("Missive forgée !", IconWand);
       } else if (action === "mute") {
         dropInboxItems(m.account, (x) => x.fromEmail === m.fromEmail);
         setMuted((p) => (p.some((x) => x.account === m.account && x.sender === m.fromEmail) ? p : [...p, { account: m.account, sender: m.fromEmail }]));
         const r = await fetch("/api/mute", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: m.account, sender: m.fromEmail }) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
-        say("🔇 Expéditeur masqué");
+        say("Correspondant banni", IconVolumeOff);
       } else if (action === "unmute") {
         setMuted((p) => p.filter((x) => !(x.account === m.account && x.sender === m.fromEmail)));
         await fetch("/api/mute", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: m.account, sender: m.fromEmail }) });
-        say("🔔 Expéditeur rétabli");
+        say("Correspondant gracié", IconBell);
       } else if (action === "delete") {
         dropInboxItems(m.account, (x) => x.uid === m.uid);
         const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`, { method: "DELETE" });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
-        say("🗑 Message supprimé");
+        say("Missive à la Corbeille", IconTrash);
       } else if (action === "deleteAll") {
         setBusy(null);
         setConfirm({
-          label: `Jeter TOUS les messages de ${m.from} à la Corbeille ?`,
+          label: `Jeter TOUTES les missives de ${m.from} à la Corbeille ?`,
           run: () => void msgAction(m, "deleteAllGo"),
         });
         return;
@@ -256,11 +256,11 @@ export default function Game() {
         const r = await fetch(`/api/message?account=${m.account}&sender=${encodeURIComponent(m.fromEmail)}`, { method: "DELETE" });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Échec");
-        say(`🗑 ${j.deleted ?? 0} message(s) supprimé(s)`);
+        say(`${j.deleted ?? 0} missive(s) à la Corbeille`, IconTrash);
       }
       await refresh();
     } catch (e) {
-      say(`💀 ${e instanceof Error ? e.message : "Erreur"}`);
+      say(e instanceof Error ? e.message : "Erreur", IconSkull);
       await refresh();
     } finally {
       setBusy(null);
@@ -286,15 +286,15 @@ export default function Game() {
       <Hud accounts={accounts} onAccountTap={(id) => setInboxOf(id)} />
 
       <div className="flex items-center justify-between">
-        <div className="font-pixel text-[9px] opacity-80">MISSIVES : {pile.length}</div>
+        <div className="font-pixel text-[9px] opacity-80">MISSIVES À ENVOYER : {pile.length}</div>
         <button className="btn-pixel ghost !px-2 !py-1 text-[8px] flex items-center gap-1" onClick={() => setShowAside(!showAside)}>
-          <IconPackage size={14} /> ({aside.length})
+          <IconPackage size={14} /> JARRE ({aside.length})
         </button>
       </div>
 
       <div className="relative flex-1 min-h-[340px]">
         {loading ? (
-          <div className="absolute inset-0 flex items-center justify-center font-pixel text-[10px] anim-hint">CHARGEMENT…</div>
+          <div className="absolute inset-0 flex items-center justify-center font-pixel text-[10px] anim-hint">LE VOYAGE COMMENCE…</div>
         ) : pile.length === 0 ? (
           <Victory />
         ) : (
@@ -318,7 +318,7 @@ export default function Game() {
         )}
         {pile.length > 0 && (
           <div className="absolute -bottom-2 inset-x-0 flex justify-between font-pixel text-[7px] opacity-60 pointer-events-none px-2">
-            <span className="anim-hint">◀ DE CÔTÉ</span>
+            <span className="anim-hint">◀ À LA JARRE</span>
             <span className="anim-hint">ENVOYER ▶</span>
           </div>
         )}
@@ -327,7 +327,7 @@ export default function Game() {
       {/* Boutons accessibles (fallback sans swipe) */}
       {pile.length > 0 && (
         <div className="flex gap-3 safe-bottom">
-          <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "aside")}><IconPackage size={24} /> Côté</button>
+          <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "aside")}><IconPackage size={24} /> Jarre</button>
           <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => act(pile[0], "send")}><IconSword size={24} /> Envoyer</button>
         </div>
       )}
@@ -336,21 +336,21 @@ export default function Game() {
       {showAside && (
         <div className="panel p-4 flex flex-col gap-3 max-h-[40dvh] overflow-y-auto">
           <div className="flex items-center justify-between">
-            <div className="font-pixel text-[8px] text-[var(--gold-bright)]">JARRE DES MISSIVES MISES DE CÔTÉ</div>
+            <div className="font-pixel text-[8px] text-[var(--gold-bright)]">LA JARRE AUX MISSIVES</div>
             {aside.length > 0 && (
               <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] flex items-center gap-1" disabled={!!busy} onClick={clearJar}>
-                <IconTrash size={16} /> Tout supprimer
+                <IconTrash size={16} /> Briser la jarre
               </button>
             )}
           </div>
-          {aside.length === 0 && <div className="opacity-60">Vide.</div>}
+          {aside.length === 0 && <div className="opacity-60">La jarre est vide.</div>}
           {aside.map((d) => (
             <div key={`${d.account}:${d.uid}`} className="flex items-center gap-3 bg-[var(--shadow)] p-3 border border-[#3a5a2a]">
               <div className="flex-1 min-w-0">
                 <div className="truncate text-lg">{d.to} — {d.subject}</div>
                 <div className="font-pixel text-[7px] opacity-60">{d.account}</div>
               </div>
-              <button className="btn-pixel !py-2 !px-2.5" title="Remettre dans la pile" disabled={!!busy} onClick={() => act(d, "restore")}><IconArrowBackUp size={20} /></button>
+              <button className="btn-pixel !py-2 !px-2.5" title="Renvoyer en quête" disabled={!!busy} onClick={() => act(d, "restore")}><IconArrowBackUp size={20} /></button>
               <button className="btn-pixel danger !py-2 !px-2.5" title="Envoyer" disabled={!!busy} onClick={() => act(d, "send")}><IconSword size={20} /></button>
             </div>
           ))}
@@ -388,30 +388,30 @@ export default function Game() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left" onClick={() => msgAction(m, "generate")}>
-                      <IconWand size={18} /> Générer une missive
+                      <IconWand size={18} /> Forger une missive
                     </button>
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left" onClick={() => msgAction(m, "mute")}>
-                      <IconVolumeOff size={18} /> Muter ce destinataire
+                      <IconVolumeOff size={18} /> Bannir ce correspondant
                     </button>
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left text-[var(--ruby)]" onClick={() => msgAction(m, "delete")}>
-                      <IconTrash size={18} /> Supprimer
+                      <IconTrash size={18} /> Jeter à la Corbeille
                     </button>
                     <button className="btn-pixel ghost !py-2 !px-2 text-[8px] flex items-center gap-2 justify-start text-left text-[var(--ruby)]" onClick={() => msgAction(m, "deleteAll")}>
-                      <IconTrash size={18} /> Supprimer tout de ce destinataire
+                      <IconTrash size={18} /> Tout jeter de ce correspondant
                     </button>
                   </div>
                 )}
               </div>
             ))}
-            {(inbox.latest ?? []).length === 0 && !inbox.error && <div className="opacity-60 py-4 text-center">Aucun message.</div>}
+            {(inbox.latest ?? []).length === 0 && !inbox.error && <div className="opacity-60 py-4 text-center">Aucune missive dans cette boîte.</div>}
             {inbox.error && <div className="text-[var(--ruby)]">Erreur: {inbox.error}</div>}
             {muted.filter((mm) => mm.account === inbox.id).length > 0 && (
               <div className="mt-3 pt-3 border-t border-[#2a4a2a]">
-                <div className="font-pixel text-[7px] opacity-60 mb-2">EXPÉDITEURS MASQUÉS</div>
+                <div className="font-pixel text-[7px] opacity-60 mb-2">CORRESPONDANTS BANNIS</div>
                 {muted.filter((mm) => mm.account === inbox.id).map((mm) => (
                   <div key={mm.sender} className="flex items-center justify-between py-1.5 text-sm opacity-70">
                     <span className="truncate">{mm.sender}</span>
-                    <button className="btn-pixel ghost !px-1.5 !py-1" title="Démuter"
+                    <button className="btn-pixel ghost !px-1.5 !py-1" title="Gracier"
                       onClick={() => msgAction({ account: mm.account, uid: 0, from: mm.sender, fromEmail: mm.sender, subject: "", date: null, unread: false }, "unmute")}>
                       <IconX size={13} />
                     </button>
@@ -438,7 +438,7 @@ export default function Game() {
                   <>
                     <textarea
                       className="panel w-full p-3 text-base min-h-[90px] text-[#2a1c0e] bg-[#f7ecc9]"
-                      placeholder="Que rajouter / changer ? (ex : dis-lui bon anniversaire, plus court, ton plus formel…)"
+                      placeholder="Tes ordres, héros ? (ex : souhaite-lui bon anniversaire, plus court, ton plus formel…)"
                       autoFocus
                       value={improveText}
                       onChange={(e) => setImproveText(e.target.value)}
@@ -446,14 +446,14 @@ export default function Game() {
                     <div className="flex gap-3">
                       <button className="btn-pixel ghost flex-1" onClick={() => setImproveText(null)}>Annuler</button>
                       <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy || !improveText.trim()} onClick={() => void improveMissive()}>
-                        <IconWand size={18} /> Améliorer
+                        <IconWand size={18} /> Reforger
                       </button>
                     </div>
                   </>
                 ) : (
                   <div className="flex gap-3">
                     <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => setImproveText("")}>
-                      <IconWand size={18} /> Améliorer la missive
+                      <IconWand size={18} /> Reforger la missive
                     </button>
                     <button className="btn-pixel ghost flex-1" onClick={() => { setReadingMsg(null); setReadingCtx(null); }}>Fermer</button>
                   </div>
@@ -463,7 +463,7 @@ export default function Game() {
               <div className="flex gap-3 mt-5">
                 <button className="btn-pixel flex-1" disabled={!!busy}
                   onClick={async () => { const m = readingMsg; setReadingMsg(null); await msgAction(m, "generate"); }}>
-                  <IconWand size={16} className="inline mr-1" /> Générer une missive
+                  <IconWand size={16} className="inline mr-1" /> Forger une missive
                 </button>
                 <button className="btn-pixel ghost flex-1" onClick={() => setReadingMsg(null)}>Fermer</button>
               </div>
@@ -487,7 +487,7 @@ export default function Game() {
                 <IconMailOpened size={18} /> Lire le parchemin
               </button>
               <div className="flex gap-3">
-                <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" onClick={() => { setReading(null); act(reading, "aside"); }}><IconPackage size={22} /> Côté</button>
+                <button className="btn-pixel danger flex-1 flex items-center justify-center gap-2" onClick={() => { setReading(null); act(reading, "aside"); }}><IconPackage size={22} /> Jarre</button>
                 <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={async () => { const d = reading; setReading(null); await act(d, "send"); }}><IconSword size={22} /> Envoyer</button>
               </div>
             </div>
@@ -512,7 +512,10 @@ export default function Game() {
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 inset-x-0 z-50 flex justify-center pointer-events-none">
-          <div className="panel px-5 py-3 font-pixel text-[9px] text-[var(--gold-bright)]">{toast}</div>
+          <div className="panel px-5 py-3 font-pixel text-[9px] text-[var(--gold-bright)] flex items-center gap-2.5">
+            {toast.Icon && <toast.Icon size={24} />}
+            {toast.msg}
+          </div>
         </div>
       )}
     </main>

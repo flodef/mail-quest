@@ -66,7 +66,7 @@ export default function DraftCard({
           className="absolute top-3 right-3 font-pixel text-[9px] px-2 py-1 border-2 border-[var(--ruby)] text-[var(--ruby)] bg-[#ffe8ec]"
           style={{ opacity: asideOpacity }}
         >
-          🏺 DE CÔTÉ
+          🏺 À LA JARRE
         </motion.div>
 
         <div className="flex items-center gap-2">

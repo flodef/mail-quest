@@ -40,9 +40,9 @@ export default function LoginPage() {
           className="w-full bg-[var(--shadow)] border-2 border-[var(--gold)] px-4 py-3 text-center text-2xl tracking-widest outline-none focus:border-[var(--gold-bright)]"
           placeholder="••••"
         />
-        {error && <p className="text-[var(--ruby)] font-pixel text-[9px]">MAUVAIS CODE !</p>}
+        {error && <p className="text-[var(--ruby)] font-pixel text-[9px]">LE SCEAU NE RÉPOND PAS !</p>}
         <button type="submit" className="btn-pixel w-full" disabled={loading || !code}>
-          {loading ? "…" : "ENTRER"}
+          {loading ? "…" : "FRANCHIR LE PORTAIL"}
         </button>
       </form>
     </main>
