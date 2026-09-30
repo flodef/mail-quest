@@ -128,9 +128,12 @@ export async function listTasks(): Promise<Task[]> {
 export async function addTasks(texts: string[]): Promise<number> {
   await ensureDb();
   let added = 0;
-  for (const text of texts.map((t) => t.trim()).filter(Boolean)) {
+  // Insertion en haut de pile : on insère les lignes en ordre inverse, chacune
+  // à min(position)-1, pour garder l'ordre de saisie (1re ligne = tout en haut).
+  const list = texts.map((t) => t.trim()).filter(Boolean);
+  for (const text of [...list].reverse()) {
     await sql()`INSERT INTO tasks (text, position)
-      SELECT ${text}, COALESCE(MAX(position), 0) + 1 FROM tasks`;
+      SELECT ${text}, COALESCE(MIN(position), 1) - 1 FROM tasks`;
     added++;
   }
   return added;
