@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAccounts } from "@/lib/mail/accounts";
-import { inboxStats, listDrafts } from "@/lib/mail/imap";
+import { inboxStats } from "@/lib/mail/imap";
 import { dbReady, getLastSeen, listMuted, setLastSeen, initDb } from "@/lib/db";
 import { notifyAll } from "@/lib/push";
 
@@ -28,9 +28,6 @@ export async function GET(req: Request) {
         await notifyAll(`📬 ${acc.label}`, `De: ${newest.from}\n${newest.subject}`);
       }
       await setLastSeen(acc.id, stats.unseen);
-      // Drafts waiting → remind once per day at most (checked_at gate)
-      const drafts = await listDrafts(acc);
-      void drafts;
     } catch (e) {
       events.push(`${acc.id}: error ${e instanceof Error ? e.message : e}`);
     }

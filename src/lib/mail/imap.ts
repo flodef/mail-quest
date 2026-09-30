@@ -56,8 +56,15 @@ function iso(d: string | Date | undefined): string | null {
   return d instanceof Date ? d.toISOString() : d;
 }
 
+// LIST des mailboxes mis en cache par connexion (drafts+trash résolus en 1 appel).
+const mailboxCache = new WeakMap<ImapFlow, Awaited<ReturnType<ImapFlow["list"]>>>();
+
 async function findMailbox(client: ImapFlow, special: string, fallbacks: string[]): Promise<string | null> {
-  const all = await client.list();
+  let all = mailboxCache.get(client);
+  if (!all) {
+    all = await client.list();
+    mailboxCache.set(client, all);
+  }
   const bySpecial = all.find((b) => b.specialUse === special);
   if (bySpecial) return bySpecial.path;
   for (const fb of fallbacks) {
@@ -77,30 +84,32 @@ export async function trashMailbox(client: ImapFlow): Promise<string> {
   return (await findMailbox(client, "\\Trash", ["Trash", "Corbeille", "INBOX.Trash", "INBOX.INBOX.Trash"])) ?? "Trash";
 }
 
-export async function listDrafts(acc: MailAccount): Promise<DraftSummary[]> {
-  return withClient(acc, async (client) => {
-    const box = await draftsMailbox(client);
-    const lock = await client.getMailboxLock(box);
-    try {
-      const out: DraftSummary[] = [];
-      for await (const msg of client.fetch("1:*", { envelope: true }, { uid: true })) {
-        const env = msg.envelope;
-        const to = (env?.to ?? []).map((a) => a.address ?? a.name ?? "").filter(Boolean).join(", ");
-        out.push({
-          account: acc.id,
-          mailbox: box,
-          uid: msg.uid,
-          to,
-          subject: env?.subject ?? "(sans sujet)",
-          date: iso(env?.date),
-          preview: "",
-        });
-      }
-      return out;
-    } finally {
-      lock.release();
+async function listDraftsOn(client: ImapFlow, acc: MailAccount): Promise<DraftSummary[]> {
+  const box = await draftsMailbox(client);
+  const lock = await client.getMailboxLock(box);
+  try {
+    const out: DraftSummary[] = [];
+    for await (const msg of client.fetch("1:*", { envelope: true }, { uid: true })) {
+      const env = msg.envelope;
+      const to = (env?.to ?? []).map((a) => a.address ?? a.name ?? "").filter(Boolean).join(", ");
+      out.push({
+        account: acc.id,
+        mailbox: box,
+        uid: msg.uid,
+        to,
+        subject: env?.subject ?? "(sans sujet)",
+        date: iso(env?.date),
+        preview: "",
+      });
     }
-  });
+    return out;
+  } finally {
+    lock.release();
+  }
+}
+
+export async function listDrafts(acc: MailAccount): Promise<DraftSummary[]> {
+  return withClient(acc, (client) => listDraftsOn(client, acc));
 }
 
 export async function getDraft(acc: MailAccount, mailbox: string, uid: number): Promise<DraftFull | null> {
@@ -150,33 +159,43 @@ export async function moveDraft(acc: MailAccount, mailbox: string, uid: number):
   });
 }
 
-export async function inboxStats(acc: MailAccount): Promise<{ unseen: number; total: number; latest: InboxItem[] }> {
-  return withClient(acc, async (client) => {
-    const lock = await client.getMailboxLock("INBOX");
-    try {
-      const status = await client.status("INBOX", { unseen: true, messages: true });
-      const latest: InboxItem[] = [];
-      const total: number = typeof status === "object" && status ? (status.messages ?? 0) : 0;
-      if (total > 0) {
-        const range = `${Math.max(1, total - 7)}:*`;
-        for await (const msg of client.fetch(range, { envelope: true, flags: true }, { uid: true })) {
-          const env = msg.envelope;
-          latest.unshift({
-            account: acc.id,
-            uid: msg.uid,
-            from: (env?.from ?? []).map((a) => a.name ?? a.address ?? "").filter(Boolean).join(", "),
-            fromEmail: (env?.from ?? []).map((a) => a.address ?? "").filter(Boolean).join(", ").toLowerCase(),
-            subject: env?.subject ?? "(sans sujet)",
-            date: iso(env?.date),
-            unread: !(msg.flags?.has("\\Seen") ?? false),
-          });
-        }
+async function inboxStatsOn(client: ImapFlow, acc: MailAccount): Promise<{ unseen: number; total: number; latest: InboxItem[] }> {
+  const lock = await client.getMailboxLock("INBOX");
+  try {
+    const status = await client.status("INBOX", { unseen: true, messages: true });
+    const latest: InboxItem[] = [];
+    const total: number = typeof status === "object" && status ? (status.messages ?? 0) : 0;
+    if (total > 0) {
+      const range = `${Math.max(1, total - 7)}:*`;
+      for await (const msg of client.fetch(range, { envelope: true, flags: true }, { uid: true })) {
+        const env = msg.envelope;
+        latest.unshift({
+          account: acc.id,
+          uid: msg.uid,
+          from: (env?.from ?? []).map((a) => a.name ?? a.address ?? "").filter(Boolean).join(", "),
+          fromEmail: (env?.from ?? []).map((a) => a.address ?? "").filter(Boolean).join(", ").toLowerCase(),
+          subject: env?.subject ?? "(sans sujet)",
+          date: iso(env?.date),
+          unread: !(msg.flags?.has("\\Seen") ?? false),
+        });
       }
-      return { unseen: typeof status === "object" && status ? (status.unseen ?? 0) : 0, total, latest };
-    } finally {
-      lock.release();
     }
-  });
+    return { unseen: typeof status === "object" && status ? (status.unseen ?? 0) : 0, total, latest };
+  } finally {
+    lock.release();
+  }
+}
+
+export async function inboxStats(acc: MailAccount): Promise<{ unseen: number; total: number; latest: InboxItem[] }> {
+  return withClient(acc, (client) => inboxStatsOn(client, acc));
+}
+
+// Stats INBOX + drafts en UNE connexion (économie Fluid : 1 TLS+auth au lieu de 2).
+export async function fetchAccount(acc: MailAccount): Promise<{ stats: Awaited<ReturnType<typeof inboxStats>>; drafts: DraftSummary[] }> {
+  return withClient(acc, async (client) => ({
+    stats: await inboxStatsOn(client, acc),
+    drafts: await listDraftsOn(client, acc),
+  }));
 }
 
 async function downloadRaw(client: ImapFlow, uid: number): Promise<Buffer | null> {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAccount, getAccounts } from "@/lib/mail/accounts";
 import { clearDraftsToTrash } from "@/lib/mail/imap";
 import { dbReady, listAsides, removeAside } from "@/lib/db";
+import { invalidateMail } from "@/lib/cache";
 
 export async function POST() {
   if (!dbReady()) return NextResponse.json({ error: "db unavailable" }, { status: 503 });
@@ -22,5 +23,6 @@ export async function POST() {
       errors.push(`${account}: ${e instanceof Error ? e.message : e}`);
     }
   }
+  if (cleared > 0) invalidateMail();
   return NextResponse.json({ ok: errors.length === 0, cleared, errors });
 }

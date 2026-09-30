@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { addAside, dbReady, removeAside } from "@/lib/db";
+import { invalidateMail } from "@/lib/cache";
 
 export async function POST(req: Request) {
   const { account, uid } = await req.json().catch(() => ({}));
@@ -8,6 +9,7 @@ export async function POST(req: Request) {
   }
   if (!dbReady()) return NextResponse.json({ error: "db unavailable" }, { status: 503 });
   await addAside(account, uid);
+  invalidateMail();
   return NextResponse.json({ ok: true });
 }
 
@@ -15,5 +17,6 @@ export async function DELETE(req: Request) {
   const { account, uid } = await req.json().catch(() => ({}));
   if (!dbReady()) return NextResponse.json({ error: "db unavailable" }, { status: 503 });
   await removeAside(account, uid);
+  invalidateMail();
   return NextResponse.json({ ok: true });
 }

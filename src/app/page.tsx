@@ -52,16 +52,15 @@ export default function Game() {
   const say = (msg: string, Icon?: typeof IconSword) => { setToast({ msg, Icon }); setTimeout(() => setToast(null), 2500); };
 
   const refresh = useCallback(async () => {
-    const [ov, dr, tk, nt] = await Promise.all([
+    const [ov, tk, nt] = await Promise.all([
       fetch("/api/overview").then((r) => r.json()),
-      fetch("/api/drafts").then((r) => r.json()),
       fetch("/api/tasks").then((r) => (r.ok ? r.json() : { tasks: [] })),
       fetch("/api/notes").then((r) => (r.ok ? r.json() : { notes: [] })),
     ]);
     setAccounts(ov.accounts ?? []);
     setMuted(ov.muted ?? []);
-    setPile(dr.active ?? []);
-    setAside(dr.aside ?? []);
+    setPile((ov.accounts ?? []).flatMap((a: { active?: Draft[] }) => a.active ?? []));
+    setAside((ov.accounts ?? []).flatMap((a: { aside?: Draft[] }) => a.aside ?? []));
     setTasks(tk.tasks ?? []);
     setNotes(nt.notes ?? []);
     setLoading(false);

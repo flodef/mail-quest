@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAccount } from "@/lib/mail/accounts";
 import { deleteFromSender, deleteMessage, findOriginalMessage, getMessage } from "@/lib/mail/imap";
+import { invalidateMail } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -39,9 +40,11 @@ export async function DELETE(req: Request) {
     const acc = getAccount(account);
     if (sender) {
       const count = await deleteFromSender(acc, sender);
+      if (count > 0) invalidateMail();
       return NextResponse.json({ ok: true, deleted: count });
     }
     await deleteMessage(acc, uid);
+    invalidateMail();
     return NextResponse.json({ ok: true, deleted: 1 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
