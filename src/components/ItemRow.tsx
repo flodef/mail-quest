@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
-import { IconGripVertical } from "@tabler/icons-react";
+import { IconArrowUp, IconGripVertical } from "@tabler/icons-react";
 import type { GripProps } from "@/components/SortableList";
 
 export const SWIPE_X = 90;
@@ -11,6 +11,8 @@ export default function ItemRow<T>({
   grip,
   onDone,
   onBottom,
+  onPromote,
+  dim = false,
   doneLabel = "⚔ FAIT",
   bottomLabel = "⇣ FOND",
 }: {
@@ -18,6 +20,8 @@ export default function ItemRow<T>({
   grip: GripProps;
   onDone: () => void;
   onBottom: () => void;
+  onPromote?: () => void;
+  dim?: boolean;
   doneLabel?: string;
   bottomLabel?: string;
 }) {
@@ -50,7 +54,7 @@ export default function ItemRow<T>({
         dragElastic={0.6}
         onDragEnd={onDragEnd}
         style={{ x }}
-        className="flex items-center gap-2 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a] select-none"
+        className={`flex items-center gap-2 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a] select-none${dim ? " opacity-60" : ""}`}
       >
         <button
           {...grip}
@@ -60,6 +64,15 @@ export default function ItemRow<T>({
           <IconGripVertical size={18} />
         </button>
         <div className="flex-1 min-w-0 text-lg leading-snug break-words">{(item as { text?: string }).text}</div>
+        {onPromote && (
+          <button
+            className="shrink-0 text-[var(--gold-bright)] opacity-70 hover:opacity-100"
+            onClick={onPromote}
+            aria-label="Remonter dans le top 5"
+          >
+            <IconArrowUp size={18} />
+          </button>
+        )}
       </motion.div>
     </div>
   );
