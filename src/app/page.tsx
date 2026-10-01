@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconChevronDown, IconPackage, IconDeviceMobileDown, IconPaperclip, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconChevronDown, IconGripVertical, IconPackage, IconDeviceMobileDown, IconPaperclip, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
 import { enqueueOp, flushOps, loadSnapshot, pendingOps, saveSnapshot, type Op } from "@/lib/offline";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
@@ -758,8 +758,17 @@ export default function Game() {
               onReorder={(next) => inboxReorder(inbox.id, next)}
               renderItem={(m, grip) => (
                 <div className="relative">
+                  {/* Poignée HORS de la zone swipe (framer-motion) : sinon le
+                      drag horizontal capte le pointeur et le tri vertical casse. */}
+                  <button
+                    {...grip}
+                    className="absolute left-0 top-0 bottom-0 w-6 z-10 flex items-center justify-center opacity-50 cursor-grab active:cursor-grabbing touch-none"
+                    aria-label="Réordonner"
+                  >
+                    <IconGripVertical size={16} />
+                  </button>
+                  <div className="pl-6">
                   <InboxRow
-                    grip={grip}
                     disabled={!!busy}
                     onOpen={() => readMsg(m)}
                     onToggleMenu={() => setMenuFor(menuFor === m.uid ? null : m.uid)}
@@ -793,6 +802,7 @@ export default function Game() {
                     </button>
                   </div>
                 )}
+                  </div>
                 </div>
               )}
             />
