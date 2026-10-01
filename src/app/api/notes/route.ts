@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addNote, dbReady, deleteNote, listNotes, updateNote } from "@/lib/db";
+import { addNote, dbReady, deleteNote, listNotes, reorderNotes, updateNote } from "@/lib/db";
 import { generateTitle } from "@/lib/ai";
 import { bulletizeNote } from "@/lib/items";
 
@@ -27,6 +27,10 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
   const body = await req.json().catch(() => ({}));
+  if (Array.isArray(body.order)) {
+    await reorderNotes(body.order.filter((id: unknown) => typeof id === "string"));
+    return NextResponse.json({ ok: true });
+  }
   const id = typeof body.id === "string" ? body.id : "";
   const text = typeof body.body === "string" ? body.body.trim() : "";
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });

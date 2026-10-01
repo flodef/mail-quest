@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { IconArrowLeft, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowLeft, IconChevronDown, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
-import SortableList from "@/components/SortableList";
+import SortableList, { type GripProps } from "@/components/SortableList";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
 import type { Note } from "@/lib/db";
 
@@ -16,6 +16,13 @@ function parseItems(body: string): Item[] {
 function fmtNoteDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Compte "fait/total" des items d'une note ; `allDone` quand tout est terminé.
+function noteProgress(body: string): { done: number; total: number; allDone: boolean } {
+  const items = parseNoteItems(body);
+  const done = items.filter((i) => i.done).length;
+  return { done, total: items.length, allDone: items.length > 0 && done === items.length };
 }
 
 function NoteDetail({
@@ -65,7 +72,10 @@ function NoteDetail({
     <>
       <div className="flex items-center justify-between gap-2">
         <button className="btn-pixel ghost !px-2" onClick={onBack} title="Retour"><IconArrowLeft size={18} /></button>
-        <div className="font-pixel text-[8px] text-[var(--gold-bright)] flex-1 min-w-0 break-words">{note.title}</div>
+        <div className="font-pixel text-[8px] text-[var(--gold-bright)] flex-1 min-w-0 break-words">
+          {note.title}
+          {items.length > 0 && <span className="opacity-60"> {done.length}/{items.length}</span>}
+        </div>
         <button className="shrink-0 opacity-50 hover:opacity-100" disabled={busy} onClick={() => onDelete(note.id)} title="Jeter la note"><IconTrash size={16} /></button>
       </div>
       <div className="font-pixel text-[6px] opacity-50">{fmtNoteDate(note.created_at)}</div>
@@ -111,6 +121,43 @@ function NoteDetail({
   );
 }
 
+function NoteCard({
+  note,
+  grip,
+  onOpen,
+}: {
+  note: Note;
+  grip?: GripProps;
+  onOpen: () => void;
+}) {
+  const progress = noteProgress(note.body);
+  return (
+    <div className="flex items-stretch gap-1.5">
+      {grip && (
+        <button
+          {...grip}
+          className="shrink-0 opacity-50 cursor-grab active:cursor-grabbing touch-none flex items-center"
+          aria-label="Réordonner"
+        >
+          <IconGripVertical size={18} />
+        </button>
+      )}
+      <button className="flex-1 min-w-0 bg-[var(--shadow)] p-3 border border-[#3a5a2a] flex flex-col gap-1.5 text-left cursor-pointer" onClick={onOpen}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-pixel text-[8px] text-[var(--gold-bright)] min-w-0 break-words flex-1">{note.title}</div>
+          {progress.total > 0 && (
+            <div className={`font-pixel text-[8px] shrink-0 ${progress.allDone ? "text-[var(--link-green)]" : "opacity-70"}`}>
+              {progress.done}/{progress.total}
+            </div>
+          )}
+        </div>
+        <div className="text-base leading-snug whitespace-pre-wrap break-words line-clamp-3">{note.body}</div>
+        <div className="font-pixel text-[6px] opacity-50">{fmtNoteDate(note.created_at)}</div>
+      </button>
+    </div>
+  );
+}
+
 export default function NotesPanel({
   notes,
   busy,
@@ -118,6 +165,7 @@ export default function NotesPanel({
   onAdd,
   onDelete,
   onUpdate,
+  onReorder,
 }: {
   notes: Note[];
   busy: boolean;
@@ -125,17 +173,31 @@ export default function NotesPanel({
   onAdd: (body: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, body: string) => void;
+  onReorder: (ids: string[]) => void;
 }) {
   const [input, setInput] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
   const downOnBackdrop = useRef(false);
   const open = notes.find((n) => n.id === openId) ?? null;
+
+  // Groupes terminés (tous les items faits) : relégués en bas, masqués par défaut.
+  const [pending, completed] = useMemo(() => {
+    const p: Note[] = [];
+    const c: Note[] = [];
+    for (const n of notes) (noteProgress(n.body).allDone ? c : p).push(n);
+    return [p, c];
+  }, [notes]);
 
   function submit() {
     const t = input.trim();
     if (!t) return;
     setInput("");
     onAdd(t);
+  }
+
+  function handleReorder(next: Note[]) {
+    onReorder([...next, ...completed].map((n) => n.id));
   }
 
   return (
@@ -174,13 +236,32 @@ export default function NotesPanel({
             </div>
 
             {notes.length === 0 && <div className="opacity-60">Le fourre-tout est vide.</div>}
-            {notes.map((n) => (
-              <button key={n.id} className="bg-[var(--shadow)] p-3 border border-[#3a5a2a] flex flex-col gap-1.5 text-left w-full cursor-pointer" onClick={() => setOpenId(n.id)}>
-                <div className="font-pixel text-[8px] text-[var(--gold-bright)] min-w-0 break-words">{n.title}</div>
-                <div className="text-base leading-snug whitespace-pre-wrap break-words line-clamp-3">{n.body}</div>
-                <div className="font-pixel text-[6px] opacity-50">{fmtNoteDate(n.created_at)}</div>
-              </button>
-            ))}
+
+            <SortableList
+              items={pending}
+              onReorder={handleReorder}
+              renderItem={(n, grip) => <NoteCard note={n} grip={grip} onOpen={() => setOpenId(n.id)} />}
+            />
+
+            {showDone &&
+              completed.map((n) => (
+                <div key={n.id} className="opacity-50">
+                  <NoteCard note={n} onOpen={() => setOpenId(n.id)} />
+                </div>
+              ))}
+            {completed.length > 0 && (
+              // Sticky : reste visible au bas du panneau quand la liste des
+              // terminés est dépliée (comme la réserve de Quêtes).
+              <div className={`${showDone ? "sticky bottom-0 z-10" : ""} bg-[var(--forest-2)] py-1 -my-1`}>
+                <button
+                  className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
+                  onClick={() => setShowDone((s) => !s)}
+                >
+                  <IconChevronDown size={14} className={`transition-transform ${showDone ? "rotate-180" : ""}`} />
+                  {completed.length} TERMINÉ(S)
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

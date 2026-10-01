@@ -49,6 +49,9 @@ export async function initDb(): Promise<void> {
     body TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
   )`;
+  await q`ALTER TABLE notes ADD COLUMN IF NOT EXISTS position DOUBLE PRECISION`;
+  // Backfill : reproduit l'ordre historique (created_at DESC → position croissante)
+  await q`UPDATE notes SET position = -EXTRACT(EPOCH FROM created_at) WHERE position IS NULL`;
   inited = true;
 }
 
@@ -173,21 +176,33 @@ export interface Note {
   id: string;
   title: string;
   body: string;
+  position: number;
   created_at: string;
 }
 
 export async function listNotes(): Promise<Note[]> {
   await ensureDb();
-  const rows = await sql()`SELECT id, title, body, created_at FROM notes ORDER BY created_at DESC`;
+  const rows = await sql()`SELECT id, title, body, position, created_at FROM notes ORDER BY COALESCE(position, -EXTRACT(EPOCH FROM created_at)) ASC`;
   return rows as unknown as Note[];
 }
 
 export async function addNote(title: string, body: string, id?: string): Promise<Note> {
   await ensureDb();
+  // Nouvelle note en haut de pile (position la plus petite)
   const rows = id
-    ? await sql()`INSERT INTO notes (id, title, body) VALUES (${id}::uuid, ${title}, ${body}) RETURNING id, title, body, created_at`
-    : await sql()`INSERT INTO notes (title, body) VALUES (${title}, ${body}) RETURNING id, title, body, created_at`;
+    ? await sql()`INSERT INTO notes (id, title, body, position)
+        SELECT ${id}::uuid, ${title}, ${body}, COALESCE(MIN(position), 0) - 1 FROM notes
+        RETURNING id, title, body, position, created_at`
+    : await sql()`INSERT INTO notes (title, body, position)
+        SELECT ${title}, ${body}, COALESCE(MIN(position), 0) - 1 FROM notes
+        RETURNING id, title, body, position, created_at`;
   return rows[0] as unknown as Note;
+}
+
+export async function reorderNotes(ids: string[]): Promise<void> {
+  for (const [i, id] of ids.entries()) {
+    await sql()`UPDATE notes SET position=${i} WHERE id=${id}`;
+  }
 }
 
 export async function deleteNote(id: string): Promise<void> {

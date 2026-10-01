@@ -69,14 +69,20 @@ export default function QuestPanel({
         </div>
 
         <div className="flex gap-2">
-          <input
-            className="flex-1 min-w-0 bg-[var(--shadow)] border-2 border-[var(--gold)] px-3 py-2 text-lg outline-none focus:border-[var(--gold-bright)]"
-            placeholder="Nouvelle quête…"
+          <textarea
+            className="flex-1 min-w-0 resize-none bg-[var(--shadow)] border-2 border-[var(--gold)] px-3 py-2 text-lg outline-none focus:border-[var(--gold-bright)]"
+            placeholder="Nouvelle quête… (1 ligne = 1 quête)"
+            rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
           />
-          <button className="btn-pixel !px-3" disabled={busy || !input.trim()} onClick={submit}><IconPlus size={18} /></button>
+          <button className="btn-pixel !px-3 self-end" disabled={busy || !input.trim()} onClick={submit}><IconPlus size={18} /></button>
         </div>
 
         {!showReserve && (
@@ -99,13 +105,17 @@ export default function QuestPanel({
         )}
         {active.length === 0 && <div className="opacity-60">Aucune quête en cours.</div>}
         {hidden > 0 && (
-          <button
-            className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
-            onClick={() => setShowReserve((s) => !s)}
-          >
-            <IconChevronDown size={14} className={`transition-transform ${showReserve ? "rotate-180" : ""}`} />
-            {hidden} QUÊTE(S) EN RÉSERVE
-          </button>
+          // Sticky : le bouton reste visible au bas du panneau quand la réserve
+          // est dépliée, au lieu de finir tout en bas de la liste.
+          <div className={`${showReserve ? "sticky bottom-0 z-10" : ""} bg-[var(--forest-2)] py-1 -my-1`}>
+            <button
+              className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
+              onClick={() => setShowReserve((s) => !s)}
+            >
+              <IconChevronDown size={14} className={`transition-transform ${showReserve ? "rotate-180" : ""}`} />
+              {hidden} QUÊTE(S) EN RÉSERVE
+            </button>
+          </div>
         )}
         <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · QUÊTE FAITE ▶</div>
 

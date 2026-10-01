@@ -369,13 +369,17 @@ export default function Game() {
   const patch = (body: Record<string, unknown>): RequestInit => ({ ...json(body), method: "PATCH" });
 
   function questAdd(text: string) {
-    const t = text.trim();
-    if (!t) return;
-    const id = crypto.randomUUID();
-    setTasks((ts) =>
-      sortTasks([...ts, { id, text: t, done: false, position: Math.min(0, ...ts.map((x) => x.position)) - 1, created_at: new Date().toISOString() }]),
-    );
-    mutate({ url: "/api/tasks", init: json({ text: t, id }) });
+    // 1 ligne = 1 quête ; puces ("-", "•", …) ignorées, espaces trimmés.
+    const lines = text
+      .split("\n")
+      .map((l) => l.replace(/^[•\-–—*]\s*/, "").trim())
+      .filter(Boolean);
+    if (!lines.length) return;
+    const now = new Date().toISOString();
+    const base = Math.min(0, ...tasks.map((x) => x.position)) - lines.length;
+    const news = lines.map((t, i) => ({ id: crypto.randomUUID(), text: t, done: false, position: base + i, created_at: now }));
+    setTasks((ts) => sortTasks([...ts, ...news]));
+    mutate({ url: "/api/tasks", init: json({ texts: news.map(({ text, id }) => ({ text, id })) }) });
   }
 
   function questDone(id: string) {
@@ -414,7 +418,10 @@ export default function Game() {
     if (!t) return;
     const id = crypto.randomUUID();
     const first = t.split("\n").map((l) => l.replace(/^[•\-*✅\d.\s]+/, "").trim()).find(Boolean) ?? "Note";
-    setNotes((ns) => [{ id, title: first.slice(0, 60), body: t, created_at: new Date().toISOString() }, ...ns]);
+    setNotes((ns) => [
+      { id, title: first.slice(0, 60), body: t, position: Math.min(0, ...ns.map((n) => n.position)) - 1, created_at: new Date().toISOString() },
+      ...ns,
+    ]);
     mutate({ url: "/api/notes", init: json({ body: t, id }) });
     say("Note rangée au fourre-tout", IconNotebook);
   }
@@ -427,6 +434,14 @@ export default function Game() {
   function noteUpdate(id: string, body: string) {
     setNotes((ns) => ns.map((n) => (n.id === id ? { ...n, body } : n)));
     mutate({ url: "/api/notes", init: patch({ id, body }) });
+  }
+
+  function noteReorder(ids: string[]) {
+    setNotes((ns) => {
+      const pos = new Map(ids.map((id, i) => [id, i]));
+      return [...ns].sort((a, b) => (pos.get(a.id) ?? a.position) - (pos.get(b.id) ?? b.position));
+    });
+    mutate({ url: "/api/notes", init: patch({ order: ids }) });
   }
 
   const clearJar = () => setConfirm({
@@ -592,6 +607,7 @@ export default function Game() {
           onAdd={(b) => void noteAdd(b)}
           onDelete={noteDelete}
           onUpdate={noteUpdate}
+          onReorder={noteReorder}
         />
       )}
 
