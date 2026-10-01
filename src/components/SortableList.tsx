@@ -111,7 +111,10 @@ export default function SortableList<T>({
         // Clé stable par id : un re-render/reordonnancement ne doit pas faire
         // migrer l'état local d'une ligne (ex. mode édition) vers une autre.
         <Fragment key={(item as { id?: string }).id ?? i}>
-          {drag && drag.insert === i && indicator}
+          {/* Pas d'indicateur aux positions neutres : insert === index (avant
+              soi) ou index+1 (après soi) laissent l'item à la même place —
+              afficher la barre à ces endroits suggérait un faux déplacement. */}
+          {drag && drag.insert === i && drag.insert !== drag.index && drag.insert !== drag.index + 1 && indicator}
           <div
             data-row
             className={drag && i === drag.index ? "relative z-20 opacity-95 shadow-[4px_4px_0_rgba(0,0,0,0.6)]" : "relative"}
@@ -121,7 +124,7 @@ export default function SortableList<T>({
           </div>
         </Fragment>
       ))}
-      {drag && drag.insert === items.length && indicator}
+      {drag && drag.insert === items.length && items.length !== drag.index + 1 && indicator}
     </div>
   );
 }

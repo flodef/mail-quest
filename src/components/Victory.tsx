@@ -20,11 +20,6 @@ export default function Victory() {
         QUEST COMPLETE !
       </div>
       <div className="text-xl opacity-80 text-center">Toutes les missives ont été traitées, héros.</div>
-      <div className="flex gap-4 text-3xl">
-        <span className="anim-sparkle">✨</span>
-        <span className="anim-sparkle" style={{ animationDelay: "0.3s" }}>✨</span>
-        <span className="anim-sparkle" style={{ animationDelay: "0.6s" }}>✨</span>
-      </div>
     </div>
   );
 }
