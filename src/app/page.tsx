@@ -762,12 +762,12 @@ export default function Game() {
                       drag horizontal capte le pointeur et le tri vertical casse. */}
                   <button
                     {...grip}
-                    className="absolute left-0 top-0 bottom-0 w-6 z-10 flex items-center justify-center opacity-50 cursor-grab active:cursor-grabbing touch-none"
+                    className="absolute left-0 top-0 bottom-0 w-8 z-10 flex items-center justify-center opacity-60 cursor-grab active:cursor-grabbing touch-none bg-[var(--shadow)]/60"
                     aria-label="Réordonner"
                   >
-                    <IconGripVertical size={16} />
+                    <IconGripVertical size={20} />
                   </button>
-                  <div className="pl-6">
+                  <div className="pl-8">
                   <InboxRow
                     disabled={!!busy}
                     onOpen={() => readMsg(m)}

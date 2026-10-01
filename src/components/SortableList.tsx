@@ -3,10 +3,10 @@
 import { Fragment, useState, type PointerEvent, type ReactNode } from "react";
 
 export type GripProps = {
-  onPointerDown: (e: PointerEvent<HTMLButtonElement>) => void;
-  onPointerMove: (e: PointerEvent<HTMLButtonElement>) => void;
-  onPointerUp: (e: PointerEvent<HTMLButtonElement>) => void;
-  onPointerCancel: (e: PointerEvent<HTMLButtonElement>) => void;
+  onPointerDown: (e: PointerEvent<HTMLElement>) => void;
+  onPointerMove: (e: PointerEvent<HTMLElement>) => void;
+  onPointerUp: (e: PointerEvent<HTMLElement>) => void;
+  onPointerCancel: (e: PointerEvent<HTMLElement>) => void;
 };
 
 type Drag = { index: number; startY: number; dy: number; insert: number };
@@ -48,15 +48,16 @@ export default function SortableList<T>({
   }
 
   function grip(index: number): GripProps {
+    // Peut être appelé par un vrai pointerdown (poignée) ou par un détecteur de
+    // direction une fois le geste vertical confirmé (corps de ligne draggable).
+    const start = (e: PointerEvent<HTMLElement>) => {
+      e.stopPropagation();
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDrag({ index, startY: e.clientY, dy: 0, insert: index });
+    };
     return {
-      onPointerDown: (e) => {
-        // stopPropagation : empêche un éventuel parent draggable (swipe
-        // framer-motion) de capter le geste — sinon le drag vertical ne part pas.
-        e.stopPropagation();
-        e.preventDefault();
-        e.currentTarget.setPointerCapture(e.pointerId);
-        setDrag({ index, startY: e.clientY, dy: 0, insert: index });
-      },
+      onPointerDown: start,
       onPointerMove: (e) =>
         setDrag((d) => (d ? { ...d, dy: e.clientY - d.startY, insert: computeInsert(e.clientY) } : d)),
       onPointerUp: () => endDrag(),
