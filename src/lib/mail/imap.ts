@@ -43,7 +43,30 @@ export interface InboxFull extends InboxItem {
   attachments?: AttachmentMeta[];
 }
 
+// Circuit-breaker anti-verrouillage : un échec d'authentification suspend les
+// appels IMAP du compte pendant 30 min. Certains hébergeurs (Free) bloquent le
+// compte après des échecs répétés — un mot de passe périmé ne doit pas marteler.
+const authFailAt = new Map<string, number>();
+const AUTH_COOLDOWN_MS = 30 * 60 * 1000;
+
+function authSuspendedUntil(accountId: string): number | null {
+  const at = authFailAt.get(accountId);
+  return at && Date.now() - at < AUTH_COOLDOWN_MS ? at + AUTH_COOLDOWN_MS : null;
+}
+
+function isAuthError(e: unknown): boolean {
+  const err = e as { authenticationFailed?: boolean; response?: string; message?: string };
+  return Boolean(
+    err?.authenticationFailed ||
+      /authentication|credential|AUTHENTICATIONFAILED/i.test(err?.response ?? err?.message ?? ""),
+  );
+}
+
 async function withClient<T>(acc: MailAccount, fn: (c: ImapFlow) => Promise<T>): Promise<T> {
+  const until = authSuspendedUntil(acc.id);
+  if (until) {
+    throw new Error(`compte suspendu encore ${Math.ceil((until - Date.now()) / 60000)} min (échec d'authentification)`);
+  }
   const client = new ImapFlow({
     host: acc.imap.host,
     port: acc.imap.port,
@@ -54,7 +77,12 @@ async function withClient<T>(acc: MailAccount, fn: (c: ImapFlow) => Promise<T>):
   });
   try {
     await client.connect();
-    return await fn(client);
+    const out = await fn(client);
+    authFailAt.delete(acc.id);
+    return out;
+  } catch (e) {
+    if (isAuthError(e)) authFailAt.set(acc.id, Date.now());
+    throw e;
   } finally {
     try { await client.logout(); } catch { /* noop */ }
   }
