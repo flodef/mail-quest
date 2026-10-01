@@ -26,12 +26,21 @@ export interface InboxItem {
   subject: string;
   date: string | null;
   unread: boolean;
+  hasAttachment?: boolean;
+}
+
+export interface AttachmentMeta {
+  index: number;
+  filename: string;
+  contentType: string;
+  size: number;
 }
 
 export interface InboxFull extends InboxItem {
   to: string;
   html: string | null;
   text: string | null;
+  attachments?: AttachmentMeta[];
 }
 
 async function withClient<T>(acc: MailAccount, fn: (c: ImapFlow) => Promise<T>): Promise<T> {
@@ -159,6 +168,19 @@ export async function moveDraft(acc: MailAccount, mailbox: string, uid: number):
   });
 }
 
+// Part MIME feuille = pièce jointe si disposition "attachment" ou un filename est porté.
+function withAttachment(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const n = node as {
+    disposition?: string;
+    dispositionParameters?: { filename?: string };
+    parameters?: { name?: string };
+    childNodes?: unknown[];
+  };
+  if (n.disposition === "attachment" || n.dispositionParameters?.filename) return true;
+  return (n.childNodes ?? []).some(withAttachment);
+}
+
 async function inboxStatsOn(client: ImapFlow, acc: MailAccount): Promise<{ unseen: number; total: number; latest: InboxItem[] }> {
   const lock = await client.getMailboxLock("INBOX");
   try {
@@ -167,7 +189,7 @@ async function inboxStatsOn(client: ImapFlow, acc: MailAccount): Promise<{ unsee
     const total: number = typeof status === "object" && status ? (status.messages ?? 0) : 0;
     if (total > 0) {
       const range = `${Math.max(1, total - 7)}:*`;
-      for await (const msg of client.fetch(range, { envelope: true, flags: true }, { uid: true })) {
+      for await (const msg of client.fetch(range, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
         const env = msg.envelope;
         latest.unshift({
           account: acc.id,
@@ -177,6 +199,7 @@ async function inboxStatsOn(client: ImapFlow, acc: MailAccount): Promise<{ unsee
           subject: env?.subject ?? "(sans sujet)",
           date: iso(env?.date),
           unread: !(msg.flags?.has("\\Seen") ?? false),
+          hasAttachment: withAttachment(msg.bodyStructure),
         });
       }
     }
@@ -229,6 +252,37 @@ export async function getMessage(acc: MailAccount, uid: number): Promise<InboxFu
         unread: false,
         html: typeof parsed.html === "string" ? parsed.html : null,
         text: parsed.text ?? null,
+        attachments: (parsed.attachments ?? []).map((a, index) => ({
+          index,
+          filename: a.filename ?? `piece-jointe-${index + 1}`,
+          contentType: a.contentType ?? "application/octet-stream",
+          size: a.size ?? 0,
+        })),
+      };
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+// Télécharge une pièce jointe (index = position dans parsed.attachments).
+export async function getAttachment(
+  acc: MailAccount,
+  uid: number,
+  index: number,
+): Promise<{ filename: string; contentType: string; content: Buffer } | null> {
+  return withClient(acc, async (client) => {
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const buf = await downloadRaw(client, uid);
+      if (!buf) return null;
+      const parsed: ParsedMail = await simpleParser(buf);
+      const att = parsed.attachments?.[index];
+      if (!att) return null;
+      return {
+        filename: att.filename ?? `piece-jointe-${index + 1}`,
+        contentType: att.contentType ?? "application/octet-stream",
+        content: att.content,
       };
     } finally {
       lock.release();
@@ -257,7 +311,7 @@ async function listTrashOn(client: ImapFlow, acc: MailAccount): Promise<InboxIte
     const out: InboxItem[] = [];
     if (total > 0) {
       const range = `${Math.max(1, total - 29)}:*`;
-      for await (const msg of client.fetch(range, { envelope: true, flags: true }, { uid: true })) {
+      for await (const msg of client.fetch(range, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
         const env = msg.envelope;
         out.unshift({
           account: acc.id,

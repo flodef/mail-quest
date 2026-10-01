@@ -50,6 +50,9 @@ export default function SortableList<T>({
   function grip(index: number): GripProps {
     return {
       onPointerDown: (e) => {
+        // stopPropagation : empêche un éventuel parent draggable (swipe
+        // framer-motion) de capter le geste — sinon le drag vertical ne part pas.
+        e.stopPropagation();
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
         setDrag({ index, startY: e.clientY, dy: 0, insert: index });

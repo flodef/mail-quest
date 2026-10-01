@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconChevronDown, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconChevronDown, IconPackage, IconDeviceMobileDown, IconPaperclip, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
 import { enqueueOp, flushOps, loadSnapshot, pendingOps, saveSnapshot, type Op } from "@/lib/offline";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
@@ -14,10 +14,11 @@ import NotesPanel from "@/components/NotesPanel";
 import type { Task, Note } from "@/lib/db";
 import { parseNoteItems } from "@/lib/items";
 
-interface InboxItem { account: string; uid: number; from: string; fromEmail: string; subject: string; date: string | null; unread: boolean }
+interface InboxItem { account: string; uid: number; from: string; fromEmail: string; subject: string; date: string | null; unread: boolean; hasAttachment?: boolean }
 interface OverviewAccount extends AccountBadge { latest?: InboxItem[] }
 interface DraftBody extends Draft { html: string | null; text: string | null; cc: string }
-interface MsgBody extends InboxItem { to: string; html: string | null; text: string | null }
+interface AttachmentMeta { index: number; filename: string; contentType: string; size: number }
+interface MsgBody extends InboxItem { to: string; html: string | null; text: string | null; attachments?: AttachmentMeta[] }
 
 export default function Game() {
   const [accounts, setAccounts] = useState<OverviewAccount[]>([]);
@@ -37,6 +38,7 @@ export default function Game() {
   const [loading, setLoading] = useState(true);
   const [menuFor, setMenuFor] = useState<number | null>(null);
   const [readingMsg, setReadingMsg] = useState<MsgBody | null>(null);
+  const [openingMsg, setOpeningMsg] = useState(false);
   const [readingCtx, setReadingCtx] = useState<Draft | null>(null);
   const [improveText, setImproveText] = useState<string | null>(null);
   const [muted, setMuted] = useState<{ account: string; sender: string }[]>([]);
@@ -335,9 +337,14 @@ export default function Game() {
   }, [pile]);
 
   async function readOriginal(d: Draft) {
-    const r = await fetch(`/api/message?account=${d.account}&to=${encodeURIComponent(d.to)}&subject=${encodeURIComponent(d.subject)}`);
-    if (r.ok) { setReadingCtx(d); setImproveText(null); setReadingMsg(await r.json()); }
-    else say("Parchemin introuvable", IconSkull);
+    setOpeningMsg(true);
+    try {
+      const r = await fetch(`/api/message?account=${d.account}&to=${encodeURIComponent(d.to)}&subject=${encodeURIComponent(d.subject)}`);
+      if (r.ok) { setReadingCtx(d); setImproveText(null); setReadingMsg(await r.json()); }
+      else say("Parchemin introuvable", IconSkull);
+    } finally {
+      setOpeningMsg(false);
+    }
   }
 
   async function improveMissive() {
@@ -541,9 +548,14 @@ export default function Game() {
   });
 
   async function readMsg(m: InboxItem) {
-    const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
-    if (r.ok) { setReadingCtx(null); setImproveText(null); setReadingMsg(await r.json()); }
-    else say("Parchemin illisible", IconSkull);
+    setOpeningMsg(true);
+    try {
+      const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
+      if (r.ok) { setReadingCtx(null); setImproveText(null); setReadingMsg(await r.json()); }
+      else say("Parchemin illisible", IconSkull);
+    } finally {
+      setOpeningMsg(false);
+    }
   }
 
   async function msgAction(m: InboxItem, action: "generate" | "mute" | "delete" | "deleteAll" | "deleteAllGo" | "unmute") {
@@ -747,7 +759,6 @@ export default function Game() {
               renderItem={(m, grip) => (
                 <div className="relative">
                   <InboxRow
-                    unread={m.unread}
                     grip={grip}
                     disabled={!!busy}
                     onOpen={() => readMsg(m)}
@@ -757,6 +768,7 @@ export default function Game() {
                   >
                     <div className="flex items-baseline gap-2 pr-8">
                       <div className="text-lg leading-tight flex-1 min-w-0">{m.from}</div>
+                      {m.hasAttachment && <IconPaperclip size={14} className="shrink-0 opacity-60" />}
                       <div className="font-pixel text-[6px] opacity-50 shrink-0 pr-6">{fmtDate(m.date)}</div>
                     </div>
                     <div className="opacity-80 pr-8">{m.subject}</div>
@@ -839,6 +851,15 @@ export default function Game() {
       )}
 
       {/* Lecture message inbox */}
+      {/* Chargement d'une missive (IMAP peut prendre 1-2 s) */}
+      {openingMsg && !readingMsg && (
+        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4">
+          <div className="card-parchment max-w-md w-full p-5 text-center font-pixel text-[9px] text-[#8a6d3b] animate-pulse">
+            Décachetage de la missive…
+          </div>
+        </div>
+      )}
+
       {readingMsg && (
         <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" {...backdropProps(() => { setReadingMsg(null); setReadingCtx(null); setImproveText(null); })}>
           <div className="card-parchment max-w-md w-full max-h-[80dvh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
@@ -847,6 +868,22 @@ export default function Game() {
             {readingMsg.html
               ? <div className="prose-sm" dangerouslySetInnerHTML={{ __html: readingMsg.html }} />
               : <pre className="whitespace-pre-wrap text-lg leading-snug">{readingMsg.text ?? "(vide)"}</pre>}
+            {readingMsg.attachments && readingMsg.attachments.length > 0 && (
+              <div className="mt-3 flex flex-col gap-1.5">
+                {readingMsg.attachments.map((a) => (
+                  <a
+                    key={a.index}
+                    href={`/api/message?account=${encodeURIComponent(readingMsg.account)}&uid=${readingMsg.uid}&part=${a.index}`}
+                    download={a.filename}
+                    className="flex items-center gap-2 bg-[var(--shadow)] border border-[#3a5a2a] px-3 py-2 text-sm"
+                  >
+                    <IconPaperclip size={16} className="shrink-0" />
+                    <span className="flex-1 min-w-0 truncate">{a.filename}</span>
+                    <span className="font-pixel text-[6px] opacity-60 shrink-0">{(a.size / 1024).toFixed(0)} KO</span>
+                  </a>
+                ))}
+              </div>
+            )}
             {readingCtx ? (
               <div className="flex flex-col gap-3 mt-5">
                 {improveText !== null ? (

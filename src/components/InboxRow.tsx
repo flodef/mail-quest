@@ -19,7 +19,6 @@ export function fmtDate(d: string | null): string {
 }
 
 export default function InboxRow({
-  unread,
   grip,
   onOpen,
   onToggleMenu,
@@ -28,7 +27,6 @@ export default function InboxRow({
   disabled,
   children,
 }: {
-  unread: boolean;
   grip?: GripProps;
   onOpen: () => void;
   onToggleMenu: () => void;
@@ -68,7 +66,7 @@ export default function InboxRow({
       <motion.div className="absolute inset-y-0 right-0 w-full flex items-center justify-end pr-3 font-pixel text-[8px] text-[#ff8ba0]" style={{ opacity: delOpacity }}>
         POTENCE <IconTrash size={18} className="ml-1" />
       </motion.div>
-      <div className={`relative py-3 ${unread ? "font-bold" : "opacity-60"}`}>
+      <div className="relative py-3">
         {grip && (
           <button
             {...grip}
