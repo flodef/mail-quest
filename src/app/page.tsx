@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconChevronDown, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
 import { enqueueOp, flushOps, loadSnapshot, pendingOps, saveSnapshot, type Op } from "@/lib/offline";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
@@ -28,6 +28,8 @@ export default function Game() {
   const [showAside, setShowAside] = useState(false);
   const [inboxOf, setInboxOf] = useState<string | null>(null);
   const [inboxOrder, setInboxOrder] = useState<Record<string, number[]>>({});
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trash, setTrash] = useState<InboxItem[] | null>(null);
   const [pushOn, setPushOn] = useState<boolean | null>(null);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [canInstall, setCanInstall] = useState(false);
@@ -487,6 +489,57 @@ export default function Game() {
     mutate({ url: "/api/inbox-order", init: json({ account: accountId, uids }) });
   }
 
+  // Potence = corbeille IMAP du compte (chargée à la demande, pas cachée).
+  async function loadTrash(accountId: string) {
+    setTrash(null);
+    const r = await fetch(`/api/trash?account=${accountId}`);
+    if (r.ok) setTrash((await r.json()).items ?? []);
+    else say("Potence illisible", IconSkull);
+  }
+
+  function toggleTrash() {
+    if (!trashOpen && inbox) void loadTrash(inbox.id);
+    setTrashOpen((o) => !o);
+  }
+
+  async function trashAction(m: InboxItem, action: "restore" | "purge") {
+    if (busy) return;
+    setBusy(`trash:${m.uid}`);
+    try {
+      const init = action === "restore"
+        ? json({ account: m.account, uid: m.uid })
+        : { method: "DELETE" as const };
+      const url = action === "restore" ? "/api/trash" : `/api/trash?account=${m.account}&uid=${m.uid}`;
+      const r = await fetch(url, init);
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
+      setTrash((t) => t?.filter((x) => x.uid !== m.uid) ?? t);
+      say(action === "restore" ? "Missive ressuscitée !" : "Missive réduite en cendres", action === "restore" ? IconArrowBackUp : IconSkull);
+      if (action === "restore") await refresh();
+    } catch (e) {
+      say(e instanceof Error ? e.message : "Erreur", IconSkull);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const purgeTrashAll = () => setConfirm({
+    label: `Réduire en cendres les ${trash?.length ?? 0} missive(s) de la potence ? Irréversible !`,
+    run: () => void (async () => {
+      if (!inbox) return;
+      setBusy("trash:all");
+      try {
+        const r = await fetch(`/api/trash?account=${inbox.id}&all=1`, { method: "DELETE" });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Échec");
+        setTrash([]);
+        say("Potence purgée", IconSkull);
+      } catch (e) {
+        say(e instanceof Error ? e.message : "Erreur", IconSkull);
+      } finally {
+        setBusy(null);
+      }
+    })(),
+  });
+
   async function readMsg(m: InboxItem) {
     const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
     if (r.ok) { setReadingCtx(null); setImproveText(null); setReadingMsg(await r.json()); }
@@ -682,11 +735,11 @@ export default function Game() {
 
       {/* Tiroir inbox */}
       {inbox && (
-        <div className="fixed inset-0 z-40 bg-black/70 flex items-end" {...backdropProps(() => { setInboxOf(null); setMenuFor(null); })}>
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-end" {...backdropProps(() => { setInboxOf(null); setMenuFor(null); setTrash(null); setTrashOpen(false); })}>
           <div className="panel w-full max-w-md mx-auto p-4 max-h-[70dvh] overflow-y-auto" onClick={(e) => { e.stopPropagation(); setMenuFor(null); }}>
             <div className="flex justify-between items-center mb-3">
               <div className="font-pixel text-[9px]" style={{ color: inbox.color }}>{inbox.label}</div>
-              <button className="btn-pixel ghost !px-2" onClick={() => setInboxOf(null)}>✕</button>
+              <button className="btn-pixel ghost !px-2" onClick={() => { setInboxOf(null); setTrash(null); setTrashOpen(false); }}>✕</button>
             </div>
             <SortableList
               items={orderedInbox(inbox)}
@@ -733,6 +786,40 @@ export default function Game() {
             />
             {(inbox.latest ?? []).length === 0 && !inbox.error && <div className="opacity-60 py-4 text-center">Aucune missive dans cette boîte.</div>}
             {inbox.error && <div className="text-[var(--ruby)]">Erreur: {inbox.error}</div>}
+
+            {/* Potence : corbeille IMAP du compte (voir / ressusciter / purger) */}
+            <div className="mt-3 pt-3 border-t border-[#2a4a2a]">
+              <button
+                className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
+                onClick={toggleTrash}
+              >
+                <IconChevronDown size={14} className={`transition-transform ${trashOpen ? "rotate-180" : ""}`} />
+                POTENCE
+              </button>
+              {trashOpen && (
+                <div className="flex flex-col gap-1.5 mt-2">
+                  {trash === null && <div className="opacity-60 py-2 text-center">On hisse la potence…</div>}
+                  {trash !== null && trash.length === 0 && <div className="opacity-60 py-2 text-center">La potence est vide.</div>}
+                  {trash !== null && trash.length > 0 && (
+                    <>
+                      <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] self-end flex items-center gap-1" disabled={!!busy} onClick={purgeTrashAll}>
+                        <IconSkull size={14} /> Tout purger ({trash.length})
+                      </button>
+                      {trash.map((m) => (
+                        <div key={m.uid} className="flex items-center gap-3 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a] opacity-70">
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate text-base leading-tight">{m.from} — {m.subject}</div>
+                            <div className="font-pixel text-[6px] opacity-60">{fmtDate(m.date)}</div>
+                          </div>
+                          <button className="btn-pixel ghost !py-1.5 !px-2" title="Ressusciter (retour boîte)" disabled={!!busy} onClick={() => trashAction(m, "restore")}><IconArrowBackUp size={16} /></button>
+                          <button className="btn-pixel danger !py-1.5 !px-2" title="Réduire en cendres" disabled={!!busy} onClick={() => trashAction(m, "purge")}><IconTrash size={16} /></button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
             {muted.filter((mm) => mm.account === inbox.id).length > 0 && (
               <div className="mt-3 pt-3 border-t border-[#2a4a2a]">
                 <div className="font-pixel text-[7px] opacity-60 mb-2">CORRESPONDANTS BANNIS</div>

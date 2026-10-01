@@ -248,6 +248,70 @@ export async function deleteMessage(acc: MailAccount, uid: number): Promise<void
   });
 }
 
+async function listTrashOn(client: ImapFlow, acc: MailAccount): Promise<InboxItem[]> {
+  const box = await trashMailbox(client);
+  const lock = await client.getMailboxLock(box);
+  try {
+    const status = await client.status(box, { messages: true });
+    const total: number = typeof status === "object" && status ? (status.messages ?? 0) : 0;
+    const out: InboxItem[] = [];
+    if (total > 0) {
+      const range = `${Math.max(1, total - 29)}:*`;
+      for await (const msg of client.fetch(range, { envelope: true, flags: true }, { uid: true })) {
+        const env = msg.envelope;
+        out.unshift({
+          account: acc.id,
+          uid: msg.uid,
+          from: (env?.from ?? []).map((a) => a.name ?? a.address ?? "").filter(Boolean).join(", "),
+          fromEmail: (env?.from ?? []).map((a) => a.address ?? "").filter(Boolean).join(", ").toLowerCase(),
+          subject: env?.subject ?? "(sans sujet)",
+          date: iso(env?.date),
+          unread: !(msg.flags?.has("\\Seen") ?? false),
+        });
+      }
+    }
+    return out;
+  } finally {
+    lock.release();
+  }
+}
+
+export async function listTrash(acc: MailAccount): Promise<InboxItem[]> {
+  return withClient(acc, (client) => listTrashOn(client, acc));
+}
+
+export async function restoreTrash(acc: MailAccount, uid: number): Promise<void> {
+  await withClient(acc, async (client) => {
+    const box = await trashMailbox(client);
+    const lock = await client.getMailboxLock(box);
+    try {
+      await client.messageMove(String(uid), "INBOX", { uid: true });
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+// Suppression définitive dans la corbeille (uid précis, ou toute la boîte sans uid).
+export async function purgeTrash(acc: MailAccount, uid?: number): Promise<number> {
+  return withClient(acc, async (client) => {
+    const box = await trashMailbox(client);
+    const lock = await client.getMailboxLock(box);
+    try {
+      if (Number.isInteger(uid)) {
+        await client.messageDelete(String(uid), { uid: true });
+        return 1;
+      }
+      const status = await client.status(box, { messages: true });
+      const total: number = typeof status === "object" && status ? (status.messages ?? 0) : 0;
+      if (total > 0) await client.messageDelete("1:*", { uid: false });
+      return total;
+    } finally {
+      lock.release();
+    }
+  });
+}
+
 export async function deleteFromSender(acc: MailAccount, senderEmail: string): Promise<number> {
   return withClient(acc, async (client) => {
     const trash = await trashMailbox(client);

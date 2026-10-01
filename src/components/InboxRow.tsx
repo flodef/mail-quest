@@ -1,6 +1,7 @@
 "use client";
 
-import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
+import { motion, useMotionValue, useMotionValueEvent, useTransform, type PanInfo } from "framer-motion";
+import { useRef } from "react";
 import { IconDotsVertical, IconGripVertical, IconWand, IconTrash } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import type { GripProps } from "@/components/SortableList";
@@ -37,6 +38,12 @@ export default function InboxRow({
   children: ReactNode;
 }) {
   const x = useMotionValue(0);
+  // Un swipe suivi d'un relâchement au point de départ produit un click :
+  // on mémorise tout déplacement >10px pour l'ignorer (vrai tap = pas de drag).
+  const dragged = useRef(false);
+  useMotionValueEvent(x, "change", (v) => {
+    if (Math.abs(v) > 10) dragged.current = true;
+  });
   const genOpacity = useTransform(x, [25, SWIPE_X], [0, 1]);
   const delOpacity = useTransform(x, [-SWIPE_X, -25], [1, 0]);
   const rowBg = useTransform(x, [-SWIPE_X, 0, SWIPE_X], ["#3d1220", "transparent", "#123d20"]);
@@ -71,7 +78,15 @@ export default function InboxRow({
             <IconGripVertical size={16} />
           </button>
         )}
-        <button className={`w-full text-left ${grip ? "pl-6" : ""}`} disabled={disabled} onClick={onOpen}>
+        <button
+          className={`w-full text-left ${grip ? "pl-6" : ""}`}
+          disabled={disabled}
+          onPointerDown={() => (dragged.current = false)}
+          onClick={() => {
+            if (dragged.current) { dragged.current = false; return; }
+            onOpen();
+          }}
+        >
           {children}
         </button>
         <button
