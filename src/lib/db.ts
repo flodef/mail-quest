@@ -52,6 +52,12 @@ export async function initDb(): Promise<void> {
   await q`ALTER TABLE notes ADD COLUMN IF NOT EXISTS position DOUBLE PRECISION`;
   // Backfill : reproduit l'ordre historique (created_at DESC → position croissante)
   await q`UPDATE notes SET position = -EXTRACT(EPOCH FROM created_at) WHERE position IS NULL`;
+  await q`CREATE TABLE IF NOT EXISTS inbox_order (
+    account TEXT NOT NULL,
+    uid INTEGER NOT NULL,
+    position DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (account, uid)
+  )`;
   inited = true;
 }
 
@@ -211,4 +217,20 @@ export async function deleteNote(id: string): Promise<void> {
 
 export async function updateNote(id: string, body: string): Promise<void> {
   await sql()`UPDATE notes SET body=${body} WHERE id=${id}`;
+}
+
+// --- Inbox (ordre de priorité des missives reçues) ---
+
+export async function listInboxOrder(): Promise<{ account: string; uid: number }[]> {
+  await ensureDb();
+  const rows = await sql()`SELECT account, uid FROM inbox_order ORDER BY position ASC`;
+  return rows as unknown as { account: string; uid: number }[];
+}
+
+export async function setInboxOrder(account: string, uids: number[]): Promise<void> {
+  await ensureDb();
+  await sql()`DELETE FROM inbox_order WHERE account=${account}`;
+  for (const [i, uid] of uids.entries()) {
+    await sql()`INSERT INTO inbox_order (account, uid, position) VALUES (${account}, ${uid}, ${i})`;
+  }
 }

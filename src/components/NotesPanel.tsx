@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { IconArrowLeft, IconChevronDown, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowBackUp, IconArrowLeft, IconChevronDown, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
 import SortableList, { type GripProps } from "@/components/SortableList";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
@@ -68,6 +68,12 @@ function NoteDetail({
     save([...active.filter((i) => i.id !== id), it, ...done]);
   }
 
+  function itemUndone(id: string) {
+    const it = items.find((i) => i.id === id);
+    if (!it) return;
+    save([{ ...it, done: false }, ...active, ...done.filter((i) => i.id !== id)]);
+  }
+
   return (
     <>
       <div className="flex items-center justify-between gap-2">
@@ -112,7 +118,17 @@ function NoteDetail({
           </div>
           <div className="flex flex-col gap-1.5 opacity-50">
             {done.map((i) => (
-              <div key={i.id} className="bg-[var(--shadow)] p-2 border border-[#3a5a2a] text-base line-through">{i.text}</div>
+              <div key={i.id} className="flex items-center gap-2 bg-[var(--shadow)] p-2 border border-[#3a5a2a] text-base">
+                <div className="flex-1 min-w-0 line-through">{i.text}</div>
+                <button
+                  className="shrink-0 opacity-70 hover:opacity-100"
+                  disabled={busy}
+                  title="Remettre dans la pile"
+                  onClick={() => itemUndone(i.id)}
+                >
+                  <IconArrowBackUp size={16} />
+                </button>
+              </div>
             ))}
           </div>
         </>
@@ -233,7 +249,7 @@ export default function NotesPanel({
               <textarea
                 className="flex-1 min-w-0 resize-none bg-[var(--shadow)] border-2 border-[var(--gold)] px-3 py-2 text-lg outline-none focus:border-[var(--gold-bright)]"
                 placeholder="Note rapide… (1 ligne = 1 item)"
-                rows={2}
+                rows={1}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
               />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { IconChevronDown, IconPlus, IconSkull, IconX } from "@tabler/icons-react";
+import { IconArrowBackUp, IconChevronDown, IconPlus, IconSkull, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
 import SortableList from "@/components/SortableList";
 import type { Task } from "@/lib/db";
@@ -14,6 +14,7 @@ export default function QuestPanel({
   onClose,
   onAdd,
   onDone,
+  onUndone,
   onBottom,
   onReorder,
   onPurge,
@@ -23,6 +24,7 @@ export default function QuestPanel({
   onClose: () => void;
   onAdd: (text: string) => void;
   onDone: (id: string) => void;
+  onUndone: (id: string) => void;
   onBottom: (id: string) => void;
   onReorder: (ids: string[]) => void;
   onPurge: () => void;
@@ -72,7 +74,7 @@ export default function QuestPanel({
           <textarea
             className="flex-1 min-w-0 resize-none bg-[var(--shadow)] border-2 border-[var(--gold)] px-3 py-2 text-lg outline-none focus:border-[var(--gold-bright)]"
             placeholder="Nouvelle quête… (1 ligne = 1 quête)"
-            rows={2}
+            rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -129,7 +131,17 @@ export default function QuestPanel({
             </div>
             <div className="flex flex-col gap-1.5 opacity-50">
               {done.map((t) => (
-                <div key={t.id} className="bg-[var(--shadow)] p-2 border border-[#3a5a2a] text-base line-through">{t.text}</div>
+                <div key={t.id} className="flex items-center gap-2 bg-[var(--shadow)] p-2 border border-[#3a5a2a] text-base">
+                  <div className="flex-1 min-w-0 line-through">{t.text}</div>
+                  <button
+                    className="shrink-0 opacity-70 hover:opacity-100"
+                    disabled={busy}
+                    title="Remettre dans la pile"
+                    onClick={() => onUndone(t.id)}
+                  >
+                    <IconArrowBackUp size={16} />
+                  </button>
+                </div>
               ))}
             </div>
           </>

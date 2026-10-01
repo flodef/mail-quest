@@ -1,8 +1,9 @@
 "use client";
 
 import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
-import { IconDotsVertical, IconWand, IconTrash } from "@tabler/icons-react";
+import { IconDotsVertical, IconGripVertical, IconWand, IconTrash } from "@tabler/icons-react";
 import type { ReactNode } from "react";
+import type { GripProps } from "@/components/SortableList";
 
 const SWIPE_X = 90;
 
@@ -18,6 +19,7 @@ export function fmtDate(d: string | null): string {
 
 export default function InboxRow({
   unread,
+  grip,
   onOpen,
   onToggleMenu,
   onGenerate,
@@ -26,6 +28,7 @@ export default function InboxRow({
   children,
 }: {
   unread: boolean;
+  grip?: GripProps;
   onOpen: () => void;
   onToggleMenu: () => void;
   onGenerate: () => void;
@@ -59,7 +62,16 @@ export default function InboxRow({
         POTENCE <IconTrash size={18} className="ml-1" />
       </motion.div>
       <div className={`relative py-3 ${unread ? "font-bold" : "opacity-60"}`}>
-        <button className="w-full text-left" disabled={disabled} onClick={onOpen}>
+        {grip && (
+          <button
+            {...grip}
+            className="absolute left-0 top-3.5 z-10 opacity-50 cursor-grab active:cursor-grabbing touch-none"
+            aria-label="Réordonner"
+          >
+            <IconGripVertical size={16} />
+          </button>
+        )}
+        <button className={`w-full text-left ${grip ? "pl-6" : ""}`} disabled={disabled} onClick={onOpen}>
           {children}
         </button>
         <button

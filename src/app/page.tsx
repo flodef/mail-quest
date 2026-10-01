@@ -7,6 +7,7 @@ import { enqueueOp, flushOps, loadSnapshot, pendingOps, saveSnapshot, type Op } 
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
 import InboxRow, { fmtDate } from "@/components/InboxRow";
+import SortableList from "@/components/SortableList";
 import Victory from "@/components/Victory";
 import QuestPanel from "@/components/QuestPanel";
 import NotesPanel from "@/components/NotesPanel";
@@ -26,6 +27,7 @@ export default function Game() {
   const [reading, setReading] = useState<DraftBody | null>(null);
   const [showAside, setShowAside] = useState(false);
   const [inboxOf, setInboxOf] = useState<string | null>(null);
+  const [inboxOrder, setInboxOrder] = useState<Record<string, number[]>>({});
   const [pushOn, setPushOn] = useState<boolean | null>(null);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [canInstall, setCanInstall] = useState(false);
@@ -62,13 +64,21 @@ export default function Game() {
     aside: Draft[];
     tasks: Task[];
     notes: Note[];
+    inboxOrder: Record<string, number[]>;
   }
 
   const refresh = useCallback(async () => {
     try {
-      const [ovR, tkR, ntR] = await Promise.all([fetch("/api/overview"), fetch("/api/tasks"), fetch("/api/notes")]);
+      const [ovR, tkR, ntR, ioR] = await Promise.all([
+        fetch("/api/overview"),
+        fetch("/api/tasks"),
+        fetch("/api/notes"),
+        fetch("/api/inbox-order").catch(() => null),
+      ]);
       if (!ovR.ok || !tkR.ok || !ntR.ok) throw new Error("api error");
-      const [ov, tk, nt] = await Promise.all([ovR.json(), tkR.json(), ntR.json()]);
+      const [ov, tk, nt, io] = await Promise.all([ovR.json(), tkR.json(), ntR.json(), ioR?.ok ? ioR.json() : null]);
+      const order: Record<string, number[]> = {};
+      for (const r of io?.order ?? []) (order[r.account] ??= []).push(r.uid);
       const snap: Snapshot = {
         accounts: ov.accounts ?? [],
         muted: ov.muted ?? [],
@@ -76,6 +86,7 @@ export default function Game() {
         aside: (ov.accounts ?? []).flatMap((a: { aside?: Draft[] }) => a.aside ?? []),
         tasks: tk.tasks ?? [],
         notes: nt.notes ?? [],
+        inboxOrder: order,
       };
       setAccounts(snap.accounts);
       setMuted(snap.muted);
@@ -83,6 +94,7 @@ export default function Game() {
       setAside(snap.aside);
       setTasks(snap.tasks);
       setNotes(snap.notes);
+      setInboxOrder(snap.inboxOrder);
       saveSnapshot(snap);
       setOffline(false);
     } catch {
@@ -94,6 +106,7 @@ export default function Game() {
         setAside(s.aside ?? []);
         setTasks(s.tasks ?? []);
         setNotes(s.notes ?? []);
+        setInboxOrder(s.inboxOrder ?? {});
       }
       setOffline(true);
     }
@@ -389,6 +402,11 @@ export default function Game() {
     say("Quête accomplie !", IconSword);
   }
 
+  function questUndone(id: string) {
+    setTasks((ts) => sortTasks(ts.map((t) => (t.id === id ? { ...t, done: false } : t))));
+    mutate({ url: "/api/tasks", init: patch({ id, done: false }) });
+  }
+
   function questBottom(id: string) {
     setTasks((ts) => {
       const max = Math.max(0, ...ts.map((t) => t.position));
@@ -427,10 +445,14 @@ export default function Game() {
     say("Note rangée au fourre-tout", IconNotebook);
   }
 
-  function noteDelete(id: string) {
-    setNotes((ns) => ns.filter((n) => n.id !== id));
-    mutate({ url: `/api/notes?id=${id}`, init: { method: "DELETE" } });
-  }
+  const noteDelete = (id: string) => setConfirm({
+    label: "Jeter cette note à la potence ?",
+    run: () => {
+      setNotes((ns) => ns.filter((n) => n.id !== id));
+      mutate({ url: `/api/notes?id=${id}`, init: { method: "DELETE" } });
+      say("Note jetée", IconTrash);
+    },
+  });
 
   function noteUpdate(id: string, body: string) {
     setNotes((ns) => ns.map((n) => (n.id === id ? { ...n, body } : n)));
@@ -449,6 +471,21 @@ export default function Game() {
     label: `Briser la jarre ? Les ${aside.length} missive(s) fileront à la potence.`,
     run: doClearJar,
   });
+
+  // Les missives sans ordre enregistré (nouveautés) arrivent en tête, puis
+  // l'ordre de priorité choisi par le joueur (glisser ☰ dans le tiroir).
+  function orderedInbox(acc: OverviewAccount): InboxItem[] {
+    const list = acc.latest ?? [];
+    const order = new Map((inboxOrder[acc.id] ?? []).map((uid, i) => [uid, i]));
+    const known = list.filter((m) => order.has(m.uid)).sort((a, b) => (order.get(a.uid) ?? 0) - (order.get(b.uid) ?? 0));
+    return [...list.filter((m) => !order.has(m.uid)), ...known];
+  }
+
+  function inboxReorder(accountId: string, next: InboxItem[]) {
+    const uids = next.map((m) => m.uid);
+    setInboxOrder((o) => ({ ...o, [accountId]: uids }));
+    mutate({ url: "/api/inbox-order", init: json({ account: accountId, uids }) });
+  }
 
   async function readMsg(m: InboxItem) {
     const r = await fetch(`/api/message?account=${m.account}&uid=${m.uid}`);
@@ -594,6 +631,7 @@ export default function Game() {
           onClose={() => setShowQuest(false)}
           onAdd={(t) => void questAdd(t)}
           onDone={questDone}
+          onUndone={questUndone}
           onBottom={questBottom}
           onReorder={questReorder}
           onPurge={questPurge}
@@ -650,23 +688,27 @@ export default function Game() {
               <div className="font-pixel text-[9px]" style={{ color: inbox.color }}>{inbox.label}</div>
               <button className="btn-pixel ghost !px-2" onClick={() => setInboxOf(null)}>✕</button>
             </div>
-            {(inbox.latest ?? []).map((m) => (
-              <div key={m.uid} className="relative">
-                <InboxRow
-                  unread={m.unread}
-                  disabled={!!busy}
-                  onOpen={() => readMsg(m)}
-                  onToggleMenu={() => setMenuFor(menuFor === m.uid ? null : m.uid)}
-                  onGenerate={() => void msgAction(m, "generate")}
-                  onDelete={() => void msgAction(m, "delete")}
-                >
-                  <div className="flex items-baseline gap-2 pr-8">
-                    <div className="text-lg leading-tight flex-1 min-w-0">{m.from}</div>
-                    <div className="font-pixel text-[6px] opacity-50 shrink-0 pr-6">{fmtDate(m.date)}</div>
-                  </div>
-                  <div className="opacity-80 pr-8">{m.subject}</div>
-                </InboxRow>
-                {menuFor === m.uid && (
+            <SortableList
+              items={orderedInbox(inbox)}
+              onReorder={(next) => inboxReorder(inbox.id, next)}
+              renderItem={(m, grip) => (
+                <div className="relative">
+                  <InboxRow
+                    unread={m.unread}
+                    grip={grip}
+                    disabled={!!busy}
+                    onOpen={() => readMsg(m)}
+                    onToggleMenu={() => setMenuFor(menuFor === m.uid ? null : m.uid)}
+                    onGenerate={() => void msgAction(m, "generate")}
+                    onDelete={() => void msgAction(m, "delete")}
+                  >
+                    <div className="flex items-baseline gap-2 pr-8">
+                      <div className="text-lg leading-tight flex-1 min-w-0">{m.from}</div>
+                      <div className="font-pixel text-[6px] opacity-50 shrink-0 pr-6">{fmtDate(m.date)}</div>
+                    </div>
+                    <div className="opacity-80 pr-8">{m.subject}</div>
+                  </InboxRow>
+                  {menuFor === m.uid && (
                   <div
                     ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: "smooth" })}
                     className="absolute right-0 top-full z-50 panel p-1.5 flex flex-col gap-1 min-w-[240px]"
@@ -686,8 +728,9 @@ export default function Game() {
                     </button>
                   </div>
                 )}
-              </div>
-            ))}
+                </div>
+              )}
+            />
             {(inbox.latest ?? []).length === 0 && !inbox.error && <div className="opacity-60 py-4 text-center">Aucune missive dans cette boîte.</div>}
             {inbox.error && <div className="text-[var(--ruby)]">Erreur: {inbox.error}</div>}
             {muted.filter((mm) => mm.account === inbox.id).length > 0 && (
