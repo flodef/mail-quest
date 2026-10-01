@@ -875,7 +875,7 @@ export default function Game() {
                     key={a.index}
                     href={`/api/message?account=${encodeURIComponent(readingMsg.account)}&uid=${readingMsg.uid}&part=${a.index}`}
                     download={a.filename}
-                    className="flex items-center gap-2 bg-[var(--shadow)] border border-[#3a5a2a] px-3 py-2 text-sm"
+                    className="flex items-center gap-2 bg-[#f7ecc9] text-[#2a1c0e] border-2 border-[#8a6d3b] px-3 py-2 text-sm hover:bg-[#fff5d6]"
                   >
                     <IconPaperclip size={16} className="shrink-0" />
                     <span className="flex-1 min-w-0 truncate">{a.filename}</span>
