@@ -9,7 +9,7 @@ export type GripProps = {
   onPointerCancel: (e: PointerEvent<HTMLElement>) => void;
 };
 
-type Drag = { index: number; startY: number; dy: number; insert: number; clientY: number };
+type Drag = { index: number; startY: number; dy: number; insert: number; clientY: number; scrollDelta: number };
 
 // Liste verticale triable par poignée ☰ : la ligne suit le pointeur, les autres
 // ne bougent pas, et une barre lumineuse marque le point d'insertion.
@@ -47,6 +47,7 @@ export default function SortableList<T>({
       if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight) scroller = p;
     }
     const el = scroller;
+    const startScrollTop = el?.scrollTop ?? 0;
     const id = setInterval(() => {
       if (!el) return;
       const r = el.getBoundingClientRect();
@@ -57,8 +58,12 @@ export default function SortableList<T>({
         if (y < r.top + edge) el.scrollTop -= Math.ceil((r.top + edge - y) / 4);
         else if (y > r.bottom - edge) el.scrollTop += Math.ceil((y - (r.bottom - edge)) / 4);
         else return d;
-        // La liste défile sous un doigt immobile : le point d'insertion doit suivre.
-        return { ...d, insert: computeInsert(y, d.index, d.dy) };
+        // La liste défile sous le doigt : il faut aussi compenser dy du delta
+        // de scroll, sinon la ligne « reste derrière » pendant que le point
+        // d'insertion (basé sur clientY) continue de descendre.
+        const scrollDelta = el.scrollTop - startScrollTop;
+        const dy = y - d.startY + scrollDelta;
+        return { ...d, scrollDelta, dy, insert: computeInsert(y, d.index, dy) };
       });
     }, 16);
     return () => clearInterval(id);
@@ -85,14 +90,16 @@ export default function SortableList<T>({
       e.stopPropagation();
       e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
-      setDrag({ index, startY: e.clientY, dy: 0, insert: index, clientY: e.clientY });
+      setDrag({ index, startY: e.clientY, dy: 0, insert: index, clientY: e.clientY, scrollDelta: 0 });
     };
     return {
       onPointerDown: start,
       onPointerMove: (e) => {
         setDrag((d) => {
           if (!d) return d;
-          const dy = e.clientY - d.startY;
+          // dy = mouvement du pointeur + scroll subi depuis le début du drag —
+          // sinon la ligne dérive par rapport au doigt quand la liste défile.
+          const dy = e.clientY - d.startY + d.scrollDelta;
           return { ...d, dy, clientY: e.clientY, insert: computeInsert(e.clientY, d.index, dy) };
         });
       },
