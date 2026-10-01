@@ -80,14 +80,19 @@ html, body {
   60% { transform: scale(1.3) rotate(10deg); }
   100% { transform: scale(1) rotate(0deg); }
 }
+@keyframes shine {
+  0%, 100% { filter: none; }
+  50% { filter: brightness(1.8) drop-shadow(0 0 12px var(--gold-bright)); }
+}
 @keyframes slideHint {
   0%,100% { opacity: 0.5; }
   50% { opacity: 1; }
 }
 
 .anim-bob { animation: bob 2s ease-in-out infinite; }
-.anim-sparkle { animation: sparkle 1.2s ease-in-out infinite; }
+.anim-sparkle { animation: sparkle 1.2s ease-in-out forwards; }
 .anim-triforce { animation: triforce 0.9s ease-out forwards; }
+.anim-shine { animation: shine 0.7s ease-in-out forwards; }
 .anim-hint { animation: slideHint 1.6s ease-in-out infinite; }
 
 /* mobile safe areas */

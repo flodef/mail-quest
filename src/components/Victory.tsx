@@ -12,9 +12,9 @@ export default function Victory() {
         className="anim-triforce"
         aria-label="Triforce"
       >
-        <polygon points="60,0 30,52 90,52" fill="var(--gold-bright)" stroke="var(--gold)" strokeWidth="3" />
-        <polygon points="30,54 0,106 60,106" fill="var(--gold-bright)" stroke="var(--gold)" strokeWidth="3" />
-        <polygon points="90,54 60,106 120,106" fill="var(--gold-bright)" stroke="var(--gold)" strokeWidth="3" />
+        <polygon points="60,0 30,52 90,52" fill="var(--gold-bright)" stroke="var(--gold)" strokeWidth="3" className="anim-shine" style={{ animationDelay: "0.9s" }} />
+        <polygon points="30,54 0,106 60,106" fill="var(--gold-bright)" stroke="var(--gold)" strokeWidth="3" className="anim-shine" style={{ animationDelay: "1.1s" }} />
+        <polygon points="90,54 60,106 120,106" fill="var(--gold-bright)" stroke="var(--gold)" strokeWidth="3" className="anim-shine" style={{ animationDelay: "1.3s" }} />
       </motion.svg>
       <div className="font-pixel text-[var(--gold-bright)] text-sm text-center leading-relaxed">
         QUEST COMPLETE !

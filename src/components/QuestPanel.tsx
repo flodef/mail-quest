@@ -18,6 +18,7 @@ export default function QuestPanel({
   onBottom,
   onReorder,
   onPurge,
+  onUpdate,
 }: {
   tasks: Task[];
   busy: boolean;
@@ -28,6 +29,7 @@ export default function QuestPanel({
   onBottom: (id: string) => void;
   onReorder: (ids: string[]) => void;
   onPurge: () => void;
+  onUpdate: (id: string, text: string) => void;
 }) {
   const [input, setInput] = useState("");
   // Un swipe de ligne relâché hors du panneau produit un click sur le backdrop
@@ -92,7 +94,7 @@ export default function QuestPanel({
             items={active.slice(0, VISIBLE)}
             onReorder={handleReorder}
             renderItem={(t, grip) => (
-              <ItemRow item={t} grip={grip} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
+              <ItemRow item={t} grip={grip} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} onEdit={(text) => onUpdate(t.id, text)} />
             )}
           />
         )}
@@ -101,7 +103,7 @@ export default function QuestPanel({
             items={active}
             onReorder={handleFullReorder}
             renderItem={(t, grip, i) => (
-              <ItemRow item={t} grip={grip} dim={i >= VISIBLE} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} />
+              <ItemRow item={t} grip={grip} dim={i >= VISIBLE} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} onEdit={(text) => onUpdate(t.id, text)} />
             )}
           />
         )}
@@ -119,7 +121,7 @@ export default function QuestPanel({
             </button>
           </div>
         )}
-        <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · QUÊTE FAITE ▶</div>
+        <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · QUÊTE FAITE ▶ · TOUCHER POUR ÉDITER</div>
 
         {done.length > 0 && (
           <>

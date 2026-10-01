@@ -108,7 +108,9 @@ export default function SortableList<T>({
   return (
     <div ref={setListEl} className="flex flex-col gap-2">
       {items.map((item, i) => (
-        <Fragment key={i}>
+        // Clé stable par id : un re-render/reordonnancement ne doit pas faire
+        // migrer l'état local d'une ligne (ex. mode édition) vers une autre.
+        <Fragment key={(item as { id?: string }).id ?? i}>
           {drag && drag.insert === i && indicator}
           <div
             data-row

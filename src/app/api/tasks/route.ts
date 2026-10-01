@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addTasks, dbReady, deleteTask, listTasks, purgeDoneTasks, reorderTasks, setTaskDone, taskToBottom } from "@/lib/db";
+import { addTasks, dbReady, deleteTask, listTasks, purgeDoneTasks, reorderTasks, setTaskDone, taskToBottom, updateTask } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,7 @@ export async function PATCH(req: Request) {
   } else if (typeof body.id === "string") {
     if (body.toBottom === true) await taskToBottom(body.id);
     else if (typeof body.done === "boolean") await setTaskDone(body.id, body.done);
+    else if (typeof body.text === "string" && body.text.trim()) await updateTask(body.id, body.text.trim());
     else return NextResponse.json({ error: "nothing to do" }, { status: 400 });
   } else {
     return NextResponse.json({ error: "bad request" }, { status: 400 });

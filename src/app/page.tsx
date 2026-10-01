@@ -424,6 +424,11 @@ export default function Game() {
     mutate({ url: "/api/tasks", init: patch({ id, toBottom: true }) });
   }
 
+  function questUpdate(id: string, text: string) {
+    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, text } : t)));
+    mutate({ url: "/api/tasks", init: patch({ id, text }) });
+  }
+
   function questReorder(ids: string[]) {
     setTasks((ts) => {
       const pos = new Map(ids.map((id, i) => [id, i]));
@@ -700,6 +705,7 @@ export default function Game() {
           onBottom={questBottom}
           onReorder={questReorder}
           onPurge={questPurge}
+          onUpdate={questUpdate}
         />
       )}
 

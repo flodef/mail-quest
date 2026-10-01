@@ -153,6 +153,10 @@ export async function addTasks(items: { text: string; id?: string }[]): Promise<
   return added;
 }
 
+export async function updateTask(id: string, text: string): Promise<void> {
+  await sql()`UPDATE tasks SET text=${text} WHERE id=${id}`;
+}
+
 export async function setTaskDone(id: string, done: boolean): Promise<void> {
   await sql()`UPDATE tasks SET done=${done} WHERE id=${id}`;
 }

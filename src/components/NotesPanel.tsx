@@ -68,6 +68,10 @@ function NoteDetail({
     save([...active.filter((i) => i.id !== id), it, ...done]);
   }
 
+  function itemEdit(id: string, text: string) {
+    save(items.map((i) => (i.id === id ? { ...i, text } : i)));
+  }
+
   function itemUndone(id: string) {
     const it = items.find((i) => i.id === id);
     if (!it) return;
@@ -101,7 +105,7 @@ function NoteDetail({
         items={active}
         onReorder={(next) => save([...next, ...done])}
         renderItem={(i, grip) => (
-          <ItemRow item={i} grip={grip} onDone={() => itemDone(i.id)} onBottom={() => itemBottom(i.id)} />
+          <ItemRow item={i} grip={grip} onDone={() => itemDone(i.id)} onBottom={() => itemBottom(i.id)} onEdit={(text) => itemEdit(i.id, text)} />
         )}
       />
       {active.length === 0 && items.length === 0 && <div className="opacity-60">Note vide.</div>}
