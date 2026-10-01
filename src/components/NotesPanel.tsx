@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { IconArrowLeft, IconChevronDown, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowLeft, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
 import SortableList, { type GripProps } from "@/components/SortableList";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
@@ -74,7 +74,7 @@ function NoteDetail({
         <button className="btn-pixel ghost !px-2" onClick={onBack} title="Retour"><IconArrowLeft size={18} /></button>
         <div className="font-pixel text-[8px] text-[var(--gold-bright)] flex-1 min-w-0 break-words">
           {note.title}
-          {items.length > 0 && <span className="opacity-60"> {done.length}/{items.length}</span>}
+          {active.length > 0 && <span className="opacity-60"> {active.length}</span>}
         </div>
         <button className="shrink-0 opacity-50 hover:opacity-100" disabled={busy} onClick={() => onDelete(note.id)} title="Jeter la note"><IconTrash size={16} /></button>
       </div>
@@ -103,19 +103,11 @@ function NoteDetail({
       <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · FAIT ▶</div>
 
       {done.length > 0 && (
-        <>
-          <div className="flex items-center justify-between mt-1">
-            <div className="font-pixel text-[8px] opacity-70">FAITS ({done.length})</div>
-            <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] flex items-center gap-1" disabled={busy} onClick={() => save(active)}>
-              <IconSkull size={14} /> Purger
-            </button>
-          </div>
-          <div className="flex flex-col gap-1.5 opacity-50">
-            {done.map((i) => (
-              <div key={i.id} className="bg-[var(--shadow)] p-2 border border-[#3a5a2a] text-base line-through">{i.text}</div>
-            ))}
-          </div>
-        </>
+        <div className="flex items-center justify-end mt-1">
+          <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] flex items-center gap-1" disabled={busy} onClick={() => save(active)}>
+            <IconSkull size={14} /> Purger les faits ({done.length})
+          </button>
+        </div>
       )}
     </>
   );
@@ -145,10 +137,8 @@ function NoteCard({
       <button className="flex-1 min-w-0 bg-[var(--shadow)] p-3 border border-[#3a5a2a] flex flex-col gap-1.5 text-left cursor-pointer" onClick={onOpen}>
         <div className="flex items-center justify-between gap-2">
           <div className="font-pixel text-[8px] text-[var(--gold-bright)] min-w-0 break-words flex-1">{note.title}</div>
-          {progress.total > 0 && (
-            <div className={`font-pixel text-[8px] shrink-0 ${progress.allDone ? "text-[var(--link-green)]" : "opacity-70"}`}>
-              {progress.done}/{progress.total}
-            </div>
+          {progress.total - progress.done > 0 && (
+            <div className="font-pixel text-[8px] shrink-0 opacity-70">{progress.total - progress.done}</div>
           )}
         </div>
         <div className="text-base leading-snug whitespace-pre-wrap break-words line-clamp-3">{note.body}</div>
@@ -177,7 +167,6 @@ export default function NotesPanel({
 }) {
   const [input, setInput] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [showDone, setShowDone] = useState(false);
   const downOnBackdrop = useRef(false);
   const open = notes.find((n) => n.id === openId) ?? null;
 
@@ -210,7 +199,7 @@ export default function NotesPanel({
     >
       <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <div className="font-pixel text-[9px] text-[var(--gold-bright)]">📒 FOURRE-TOUT ({notes.length})</div>
+          <div className="font-pixel text-[9px] text-[var(--gold-bright)]">📒 FOURRE-TOUT ({pending.length})</div>
           <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
         </div>
 
@@ -243,25 +232,6 @@ export default function NotesPanel({
               renderItem={(n, grip) => <NoteCard note={n} grip={grip} onOpen={() => setOpenId(n.id)} />}
             />
 
-            {showDone &&
-              completed.map((n) => (
-                <div key={n.id} className="opacity-50">
-                  <NoteCard note={n} onOpen={() => setOpenId(n.id)} />
-                </div>
-              ))}
-            {completed.length > 0 && (
-              // Sticky : reste visible au bas du panneau quand la liste des
-              // terminés est dépliée (comme la réserve de Quêtes).
-              <div className={`${showDone ? "sticky bottom-0 z-10" : ""} bg-[var(--forest-2)] py-1 -my-1`}>
-                <button
-                  className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
-                  onClick={() => setShowDone((s) => !s)}
-                >
-                  <IconChevronDown size={14} className={`transition-transform ${showDone ? "rotate-180" : ""}`} />
-                  {completed.length} TERMINÉ(S)
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>

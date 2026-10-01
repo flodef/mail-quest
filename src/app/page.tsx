@@ -11,6 +11,7 @@ import Victory from "@/components/Victory";
 import QuestPanel from "@/components/QuestPanel";
 import NotesPanel from "@/components/NotesPanel";
 import type { Task, Note } from "@/lib/db";
+import { parseNoteItems } from "@/lib/items";
 
 interface InboxItem { account: string; uid: number; from: string; fromEmail: string; subject: string; date: string | null; unread: boolean }
 interface OverviewAccount extends AccountBadge { latest?: InboxItem[] }
@@ -535,7 +536,7 @@ export default function Game() {
         <div className="font-pixel text-[9px] opacity-80">MISSIVES À EXPÉDIER : {pile.length}</div>
         <div className="flex gap-1.5">
           <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowNotes(true)} title="Fourre-tout">
-            <IconNotebook size={16} /> {notes.length}
+            <IconNotebook size={16} /> {notes.filter((n) => { const it = parseNoteItems(n.body); return it.length === 0 || it.some((i) => !i.done); }).length}
           </button>
           <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowQuest(true)} title="Quêtes">
             <IconSword size={16} /> {tasks.filter((t) => !t.done).length}
