@@ -151,7 +151,12 @@ function NoteCard({
             </div>
           )}
         </div>
-        <div className="text-base leading-snug whitespace-pre-wrap break-words line-clamp-3">{note.body}</div>
+        <div className="text-base leading-snug whitespace-pre-wrap break-words line-clamp-3">
+          {parseNoteItems(note.body)
+            .filter((i) => !i.done)
+            .map((i) => i.text)
+            .join("\n") || note.body}
+        </div>
         <div className="font-pixel text-[6px] opacity-50">{fmtNoteDate(note.created_at)}</div>
       </button>
     </div>
