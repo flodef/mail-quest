@@ -71,7 +71,22 @@ export default function Game() {
     inboxOrder: Record<string, number[]>;
   }
 
+  const applySnapshot = useCallback((s: Snapshot) => {
+    setAccounts(s.accounts ?? []);
+    setMuted(s.muted ?? []);
+    setPile(s.pile ?? []);
+    setAside(s.aside ?? []);
+    setTasks(s.tasks ?? []);
+    setNotes(s.notes ?? []);
+    setInboxOrder(s.inboxOrder ?? {});
+  }, []);
+
+  // Incrémenté à chaque mutation locale : si une mutation arrive pendant
+  // qu'un refresh est en vol, sa réponse est périmée → on la jette.
+  const dataVersion = useRef(0);
+
   const refresh = useCallback(async () => {
+    const v = dataVersion.current;
     try {
       const [ovR, tkR, ntR, ioR] = await Promise.all([
         fetch("/api/overview"),
@@ -81,6 +96,7 @@ export default function Game() {
       ]);
       if (!ovR.ok || !tkR.ok || !ntR.ok) throw new Error("api error");
       const [ov, tk, nt, io] = await Promise.all([ovR.json(), tkR.json(), ntR.json(), ioR?.ok ? ioR.json() : null]);
+      if (v !== dataVersion.current) return;
       const order: Record<string, number[]> = {};
       for (const r of io?.order ?? []) (order[r.account] ??= []).push(r.uid);
       const snap: Snapshot = {
@@ -92,45 +108,52 @@ export default function Game() {
         notes: nt.notes ?? [],
         inboxOrder: order,
       };
-      setAccounts(snap.accounts);
-      setMuted(snap.muted);
-      setPile(snap.pile);
-      setAside(snap.aside);
-      setTasks(snap.tasks);
-      setNotes(snap.notes);
-      setInboxOrder(snap.inboxOrder);
+      applySnapshot(snap);
       saveSnapshot(snap);
       setOffline(false);
     } catch {
+      if (v !== dataVersion.current) return;
       const s = loadSnapshot<Snapshot>();
-      if (s) {
-        setAccounts(s.accounts ?? []);
-        setMuted(s.muted ?? []);
-        setPile(s.pile ?? []);
-        setAside(s.aside ?? []);
-        setTasks(s.tasks ?? []);
-        setNotes(s.notes ?? []);
-        setInboxOrder(s.inboxOrder ?? {});
-      }
+      if (s) applySnapshot(s);
       setOffline(true);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, []);
+  }, [applySnapshot]);
 
-  // Rejoue les mutations en attente puis resynchronise l'état serveur.
+  // Sync sérialisée : un seul flush à la fois, trailing-edge — une mutation
+  // arrivée en cours de route est rejouée dans l'itération suivante, et un
+  // seul refresh final se fait après que la file est vide.
+  const syncing = useRef(false);
+  const syncAgain = useRef(false);
   const sync = useCallback(async () => {
-    const had = pendingOps().length;
-    const remaining = await flushOps();
-    setPending(remaining);
-    if (remaining === 0) {
-      setOffline(false);
-      if (had > 0) await refresh(); // état serveur faisant foi après rejoue
+    if (syncing.current) {
+      syncAgain.current = true;
+      return;
+    }
+    syncing.current = true;
+    try {
+      let flushed = false;
+      do {
+        syncAgain.current = false;
+        const had = pendingOps().length;
+        const remaining = await flushOps();
+        setPending(remaining);
+        if (remaining === 0) setOffline(false);
+        flushed ||= had > remaining;
+        if (remaining > 0) return; // hors-ligne ou serveur KO — on retentera
+      } while (syncAgain.current);
+      if (flushed) await refresh(); // état serveur faisant foi après rejoue
+    } finally {
+      syncing.current = false;
+      if (syncAgain.current) void sync(); // op arrivée pendant le refresh final
     }
   }, [refresh]);
 
   // Mutation offline-capable : toujours en file pour préserver l'ordre,
   // flush immédiat (no-op réseau quand en ligne).
   function mutate(op: Op) {
+    dataVersion.current++;
     setPending(enqueueOp(op));
     void sync();
   }
@@ -148,8 +171,17 @@ export default function Game() {
     };
   }, [sync]);
 
+  // Hydrate instantanément depuis le snapshot local, puis refresh en fond.
   useEffect(() => {
-    const id = setTimeout(() => void refresh(), 0);
+    const id = setTimeout(() => {
+      const s = loadSnapshot<Snapshot>();
+      if (s) {
+        applySnapshot(s);
+        setPending(pendingOps().length);
+        setLoading(false);
+      }
+      void refresh();
+    }, 0);
     return () => clearTimeout(id);
   }, [refresh]);
 
