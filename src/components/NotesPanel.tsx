@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { IconArrowBackUp, IconArrowLeft, IconChevronDown, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowBackUp, IconArrowLeft, IconChevronDown, IconClipboardCopy, IconCopyCheck, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
 import SortableList, { type GripProps } from "@/components/SortableList";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
@@ -40,10 +40,29 @@ function NoteDetail({
 }) {
   const items = useMemo(() => parseItems(note.body), [note.body]);
   const [input, setInput] = useState("");
+  const [copied, setCopied] = useState(false);
   const idCounter = useRef(0);
 
   const active = items.filter((i) => !i.done);
   const done = items.filter((i) => i.done);
+
+  // Exporte la note dans le presse-papier : "• tâche" / "✅ tâche", 1 par ligne
+  // (format réimportable via parseNoteItems).
+  async function exportItems() {
+    const text = serializeNoteItems(items);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   function save(next: Item[]) {
     onUpdate(note.id, serializeNoteItems(next));
@@ -86,6 +105,14 @@ function NoteDetail({
           {note.title}
           {items.length > 0 && <span className="opacity-60"> {done.length}/{items.length}</span>}
         </div>
+        <button
+          className="shrink-0 opacity-50 hover:opacity-100 disabled:opacity-30"
+          disabled={busy || items.length === 0}
+          onClick={exportItems}
+          title="Copier les tâches (1 par ligne)"
+        >
+          {copied ? <IconCopyCheck size={16} className="text-[var(--link-green)]" /> : <IconClipboardCopy size={16} />}
+        </button>
         <button className="shrink-0 opacity-50 hover:opacity-100" disabled={busy} onClick={() => onDelete(note.id)} title="Jeter la note"><IconTrash size={16} /></button>
       </div>
       <div className="font-pixel text-[6px] opacity-50">{fmtNoteDate(note.created_at)}</div>
