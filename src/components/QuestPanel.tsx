@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { IconArrowBackUp, IconChevronDown, IconPlus, IconSkull, IconX } from "@tabler/icons-react";
+import { IconArrowBackUp, IconChevronDown, IconClipboardCopy, IconCopyCheck, IconPlus, IconSkull, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
 import SortableList from "@/components/SortableList";
 import type { Task } from "@/lib/db";
@@ -32,6 +32,7 @@ export default function QuestPanel({
   onUpdate: (id: string, text: string) => void;
 }) {
   const [input, setInput] = useState("");
+  const [copied, setCopied] = useState(false);
   // Un swipe de ligne relâché hors du panneau produit un click sur le backdrop
   // — ne fermer que si le press a aussi commencé sur le backdrop.
   const downOnBackdrop = useRef(false);
@@ -39,6 +40,24 @@ export default function QuestPanel({
   const active = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
   const hidden = active.length - VISIBLE;
+
+  // Copie les quêtes en cours (top 5 + réserve) : "• quête", 1 par ligne
+  // (les puces sont ignorées au collage dans "Nouvelle quête…").
+  async function exportQuests() {
+    const text = active.map((t) => `• ${t.text}`).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   function submit() {
     const t = input.trim();
@@ -69,7 +88,17 @@ export default function QuestPanel({
       <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="font-pixel text-[9px] text-[var(--gold-bright)]">⚔ QUÊTES ({active.length})</div>
-          <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
+          <div className="flex items-center gap-1.5">
+            <button
+              className="btn-pixel ghost !px-2"
+              disabled={busy || active.length === 0}
+              onClick={exportQuests}
+              title="Copier les quêtes en cours (1 par ligne)"
+            >
+              {copied ? <IconCopyCheck size={18} className="text-[var(--link-green)]" /> : <IconClipboardCopy size={18} />}
+            </button>
+            <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
+          </div>
         </div>
 
         <div className="flex gap-2">
