@@ -58,6 +58,15 @@ export async function initDb(): Promise<void> {
     position DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (account, uid)
   )`;
+  await q`CREATE TABLE IF NOT EXISTS agenda (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    text TEXT NOT NULL,
+    due_at TIMESTAMPTZ NOT NULL,
+    remind_minutes INTEGER NOT NULL DEFAULT 30,
+    done BOOLEAN NOT NULL DEFAULT false,
+    reminded_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
+  )`;
   inited = true;
 }
 
@@ -142,8 +151,11 @@ export async function addTasks(items: { text: string; id?: string }[]): Promise<
   const list = items.map((t) => ({ ...t, text: t.text.trim() })).filter((t) => t.text);
   for (const { text, id } of [...list].reverse()) {
     if (id) {
+      // ON CONFLICT : le replay de l'outbox offline peut renvoyer un insert déjà
+      // reçu (réponse perdue) — sans ça, la violation PK empoisonne la file.
       await sql()`INSERT INTO tasks (id, text, position)
-        SELECT ${id}::uuid, ${text}, COALESCE(MIN(position), 1) - 1 FROM tasks`;
+        SELECT ${id}::uuid, ${text}, COALESCE(MIN(position), 1) - 1 FROM tasks
+        ON CONFLICT (id) DO NOTHING`;
     } else {
       await sql()`INSERT INTO tasks (text, position)
         SELECT ${text}, COALESCE(MIN(position), 1) - 1 FROM tasks`;
@@ -158,7 +170,10 @@ export async function updateTask(id: string, text: string): Promise<void> {
 }
 
 export async function setTaskDone(id: string, done: boolean): Promise<void> {
-  await sql()`UPDATE tasks SET done=${done} WHERE id=${id}`;
+  // done=true → en haut des trophées ; done=false → en haut de la pile active.
+  await sql()`UPDATE tasks SET done=${done},
+    position = (SELECT COALESCE(MIN(position), 1) - 1 FROM tasks WHERE done=${done} AND id<>${id})
+    WHERE id=${id}`;
 }
 
 export async function taskToBottom(id: string): Promise<void> {
@@ -202,10 +217,16 @@ export async function addNote(title: string, body: string, id?: string): Promise
   const rows = id
     ? await sql()`INSERT INTO notes (id, title, body, position)
         SELECT ${id}::uuid, ${title}, ${body}, COALESCE(MIN(position), 0) - 1 FROM notes
+        ON CONFLICT (id) DO NOTHING
         RETURNING id, title, body, position, created_at`
     : await sql()`INSERT INTO notes (title, body, position)
         SELECT ${title}, ${body}, COALESCE(MIN(position), 0) - 1 FROM notes
         RETURNING id, title, body, position, created_at`;
+  // Replay d'un insert déjà reçu : renvoyer la ligne existante.
+  if (rows.length === 0 && id) {
+    const existing = await sql()`SELECT id, title, body, position, created_at FROM notes WHERE id=${id}::uuid`;
+    return existing[0] as unknown as Note;
+  }
   return rows[0] as unknown as Note;
 }
 
@@ -221,6 +242,80 @@ export async function deleteNote(id: string): Promise<void> {
 
 export async function updateNote(id: string, body: string): Promise<void> {
   await sql()`UPDATE notes SET body=${body} WHERE id=${id}`;
+}
+
+// --- Agenda (échéances datées + rappel par mail) ---
+
+export interface AgendaEvent {
+  id: string;
+  text: string;
+  due_at: string;
+  remind_minutes: number;
+  done: boolean;
+  reminded_at: string | null;
+  created_at: string;
+}
+
+export async function listAgenda(): Promise<AgendaEvent[]> {
+  await ensureDb();
+  const rows = await sql()`SELECT id, text, due_at, remind_minutes, done, reminded_at, created_at
+    FROM agenda ORDER BY done ASC, due_at ASC`;
+  return rows as unknown as AgendaEvent[];
+}
+
+export async function addAgenda(text: string, dueAt: string, remindMinutes: number, id?: string): Promise<AgendaEvent> {
+  await ensureDb();
+  const rows = id
+    ? await sql()`INSERT INTO agenda (id, text, due_at, remind_minutes)
+        VALUES (${id}::uuid, ${text}, ${dueAt}::timestamptz, ${remindMinutes})
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id, text, due_at, remind_minutes, done, reminded_at, created_at`
+    : await sql()`INSERT INTO agenda (text, due_at, remind_minutes)
+        VALUES (${text}, ${dueAt}::timestamptz, ${remindMinutes})
+        RETURNING id, text, due_at, remind_minutes, done, reminded_at, created_at`;
+  // Replay d'un insert déjà reçu : renvoyer la ligne existante.
+  if (rows.length === 0 && id) {
+    const existing = await sql()`SELECT id, text, due_at, remind_minutes, done, reminded_at, created_at FROM agenda WHERE id=${id}::uuid`;
+    return existing[0] as unknown as AgendaEvent;
+  }
+  return rows[0] as unknown as AgendaEvent;
+}
+
+export async function updateAgendaText(id: string, text: string): Promise<void> {
+  await sql()`UPDATE agenda SET text=${text} WHERE id=${id}`;
+}
+
+// Replanification → réarme le rappel (reminded_at repart à NULL).
+export async function updateAgendaSchedule(id: string, dueAt: string, remindMinutes: number): Promise<void> {
+  await sql()`UPDATE agenda SET due_at=${dueAt}::timestamptz, remind_minutes=${remindMinutes}, reminded_at=NULL WHERE id=${id}`;
+}
+
+export async function setAgendaDone(id: string, done: boolean): Promise<void> {
+  await sql()`UPDATE agenda SET done=${done} WHERE id=${id}`;
+}
+
+export async function deleteAgenda(id: string): Promise<void> {
+  await sql()`DELETE FROM agenda WHERE id=${id}`;
+}
+
+// Échéances dont l'heure de rappel est passée, pas encore notifiées.
+export async function dueAgendaReminders(): Promise<AgendaEvent[]> {
+  await ensureDb();
+  const rows = await sql()`SELECT id, text, due_at, remind_minutes, done, reminded_at, created_at
+    FROM agenda
+    WHERE done = false AND reminded_at IS NULL
+      AND due_at - make_interval(mins => remind_minutes) <= now()`;
+  return rows as unknown as AgendaEvent[];
+}
+
+// Réclame l'envoi du rappel (atomique : un seul worker gagne). false = déjà pris.
+export async function claimAgendaReminder(id: string): Promise<boolean> {
+  const rows = await sql()`UPDATE agenda SET reminded_at = now() WHERE id=${id} AND reminded_at IS NULL RETURNING id`;
+  return rows.length > 0;
+}
+
+export async function unclaimAgendaReminder(id: string): Promise<void> {
+  await sql()`UPDATE agenda SET reminded_at = NULL WHERE id=${id}`;
 }
 
 // --- Inbox (ordre de priorité des missives reçues) ---

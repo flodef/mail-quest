@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { IconRefresh, IconBell, IconBellOff, IconChevronDown, IconGripVertical, IconPackage, IconDeviceMobileDown, IconPaperclip, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff } from "@tabler/icons-react";
+import { IconRefresh, IconBell, IconBellOff, IconChevronDown, IconGripVertical, IconPackage, IconDeviceMobileDown, IconPaperclip, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconMailOpened, IconSkull, IconNotebook, IconWifiOff, IconCalendarClock } from "@tabler/icons-react";
 import { enqueueOp, flushOps, loadSnapshot, pendingOps, saveSnapshot, type Op } from "@/lib/offline";
 import Hud, { type AccountBadge } from "@/components/Hud";
 import DraftCard, { type Draft } from "@/components/DraftCard";
@@ -11,7 +11,8 @@ import SortableList from "@/components/SortableList";
 import Victory from "@/components/Victory";
 import QuestPanel from "@/components/QuestPanel";
 import NotesPanel from "@/components/NotesPanel";
-import type { Task, Note } from "@/lib/db";
+import AgendaPanel from "@/components/AgendaPanel";
+import type { Task, Note, AgendaEvent } from "@/lib/db";
 import { parseNoteItems } from "@/lib/items";
 
 interface InboxItem { account: string; uid: number; from: string; fromEmail: string; subject: string; date: string | null; unread: boolean; hasAttachment?: boolean }
@@ -45,8 +46,13 @@ export default function Game() {
   const [confirm, setConfirm] = useState<{ label: string; run: () => void } | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [agenda, setAgenda] = useState<AgendaEvent[]>([]);
   const [showQuest, setShowQuest] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [showAgenda, setShowAgenda] = useState(false);
+  const [mutedOpen, setMutedOpen] = useState(false);
+  // Texte "Reforger la missive" en cours, conservé par missive si on ferme le popup.
+  const [improveSaved, setImproveSaved] = useState<Record<string, string>>({});
   const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
   const [pending, setPending] = useState(0);
   // Ne fermer un overlay au clic que si le press a commencé sur le backdrop
@@ -68,6 +74,7 @@ export default function Game() {
     aside: Draft[];
     tasks: Task[];
     notes: Note[];
+    agenda: AgendaEvent[];
     inboxOrder: Record<string, number[]>;
   }
 
@@ -78,6 +85,7 @@ export default function Game() {
     setAside(s.aside ?? []);
     setTasks(s.tasks ?? []);
     setNotes(s.notes ?? []);
+    setAgenda(s.agenda ?? []);
     setInboxOrder(s.inboxOrder ?? {});
   }, []);
 
@@ -88,14 +96,15 @@ export default function Game() {
   const refresh = useCallback(async () => {
     const v = dataVersion.current;
     try {
-      const [ovR, tkR, ntR, ioR] = await Promise.all([
+      const [ovR, tkR, ntR, agR, ioR] = await Promise.all([
         fetch("/api/overview"),
         fetch("/api/tasks"),
         fetch("/api/notes"),
+        fetch("/api/agenda").catch(() => null),
         fetch("/api/inbox-order").catch(() => null),
       ]);
       if (!ovR.ok || !tkR.ok || !ntR.ok) throw new Error("api error");
-      const [ov, tk, nt, io] = await Promise.all([ovR.json(), tkR.json(), ntR.json(), ioR?.ok ? ioR.json() : null]);
+      const [ov, tk, nt, ag, io] = await Promise.all([ovR.json(), tkR.json(), ntR.json(), agR?.ok ? agR.json() : null, ioR?.ok ? ioR.json() : null]);
       if (v !== dataVersion.current) return;
       const order: Record<string, number[]> = {};
       for (const r of io?.order ?? []) (order[r.account] ??= []).push(r.uid);
@@ -106,6 +115,7 @@ export default function Game() {
         aside: (ov.accounts ?? []).flatMap((a: { aside?: Draft[] }) => a.aside ?? []),
         tasks: tk.tasks ?? [],
         notes: nt.notes ?? [],
+        agenda: ag?.events ?? [],
         inboxOrder: order,
       };
       applySnapshot(snap);
@@ -183,7 +193,7 @@ export default function Game() {
       void refresh();
     }, 0);
     return () => clearTimeout(id);
-  }, [refresh]);
+  }, [refresh, applySnapshot]);
 
   // Badge compteur : onglet navigateur (favicon overlay) + PWA installée (Badging API)
   useEffect(() => {
@@ -372,7 +382,7 @@ export default function Game() {
     setOpeningMsg(true);
     try {
       const r = await fetch(`/api/message?account=${d.account}&to=${encodeURIComponent(d.to)}&subject=${encodeURIComponent(d.subject)}`);
-      if (r.ok) { setReadingCtx(d); setImproveText(null); setReadingMsg(await r.json()); }
+      if (r.ok) { setReadingCtx(d); setImproveText(improveSaved[`${d.account}:${d.uid}`] ?? null); setReadingMsg(await r.json()); }
       else say("Parchemin introuvable", IconSkull);
     } finally {
       setOpeningMsg(false);
@@ -394,6 +404,8 @@ export default function Game() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "Échec");
       say("Missive reforgée !", IconWand);
+      const k = `${d.account}:${d.uid}`;
+      setImproveSaved((s) => { const n = { ...s }; delete n[k]; return n; });
       setReadingMsg(null); setReadingCtx(null); setImproveText(null);
       await refresh();
     } catch (e) {
@@ -438,13 +450,31 @@ export default function Game() {
   }
 
   function questDone(id: string) {
-    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, done: true } : t)));
+    // Terminée → tout en haut des trophées (position la plus petite du groupe done).
+    setTasks((ts) =>
+      sortTasks(
+        ts.map((t) =>
+          t.id === id
+            ? { ...t, done: true, position: Math.min(0, ...ts.filter((x) => x.done && x.id !== id).map((x) => x.position)) - 1 }
+            : t,
+        ),
+      ),
+    );
     mutate({ url: "/api/tasks", init: patch({ id, done: true }) });
     say("Quête accomplie !", IconSword);
   }
 
   function questUndone(id: string) {
-    setTasks((ts) => sortTasks(ts.map((t) => (t.id === id ? { ...t, done: false } : t))));
+    // Restaurée → tout en haut de la pile active (visible dans le top 5).
+    setTasks((ts) =>
+      sortTasks(
+        ts.map((t) =>
+          t.id === id
+            ? { ...t, done: false, position: Math.min(0, ...ts.filter((x) => !x.done && x.id !== id).map((x) => x.position)) - 1 }
+            : t,
+        ),
+      ),
+    );
     mutate({ url: "/api/tasks", init: patch({ id, done: false }) });
   }
 
@@ -511,6 +541,42 @@ export default function Game() {
       return [...ns].sort((a, b) => (pos.get(a.id) ?? a.position) - (pos.get(b.id) ?? b.position));
     });
     mutate({ url: "/api/notes", init: patch({ order: ids }) });
+  }
+
+  // --- Agenda (échéances datées + rappel mail) ---
+
+  const sortAgenda = (es: AgendaEvent[]) =>
+    [...es].sort((a, b) => (a.done === b.done ? +new Date(a.due_at) - +new Date(b.due_at) : a.done ? 1 : -1));
+
+  function agendaAdd(text: string, dueAt: string, remindMinutes: number) {
+    const id = crypto.randomUUID();
+    setAgenda((es) => sortAgenda([...es, { id, text, due_at: dueAt, remind_minutes: remindMinutes, done: false, reminded_at: null, created_at: new Date().toISOString() }]));
+    mutate({ url: "/api/agenda", init: json({ id, text, dueAt, remindMinutes }) });
+    say("Échéance inscrite à l'agenda", IconCalendarClock);
+  }
+
+  function agendaDone(id: string) {
+    setAgenda((es) => sortAgenda(es.map((e) => (e.id === id ? { ...e, done: true } : e))));
+    mutate({ url: "/api/agenda", init: patch({ id, done: true }) });
+  }
+
+  function agendaUndone(id: string) {
+    setAgenda((es) => sortAgenda(es.map((e) => (e.id === id ? { ...e, done: false } : e))));
+    mutate({ url: "/api/agenda", init: patch({ id, done: false }) });
+  }
+
+  const agendaDelete = (id: string) => setConfirm({
+    label: "Jeter cette échéance à la potence ?",
+    run: () => {
+      setAgenda((es) => es.filter((e) => e.id !== id));
+      mutate({ url: `/api/agenda?id=${id}`, init: { method: "DELETE" } });
+      say("Échéance jetée", IconTrash);
+    },
+  });
+
+  function agendaUpdate(id: string, text: string) {
+    setAgenda((es) => es.map((e) => (e.id === id ? { ...e, text } : e)));
+    mutate({ url: "/api/agenda", init: patch({ id, text }) });
   }
 
   const clearJar = () => setConfirm({
@@ -595,6 +661,17 @@ export default function Game() {
     }
   }
 
+  // Ferme la lecture d'une missive : le texte "Reforger" en cours est conservé
+  // (par missive) pour être restauré à la prochaine ouverture.
+  function closeReadingMsg() {
+    if (readingCtx && improveText?.trim()) {
+      setImproveSaved((s) => ({ ...s, [`${readingCtx.account}:${readingCtx.uid}`]: improveText }));
+    }
+    setReadingMsg(null);
+    setReadingCtx(null);
+    setImproveText(null);
+  }
+
   async function msgAction(m: InboxItem, action: "generate" | "mute" | "delete" | "deleteAll" | "deleteAllGo" | "unmute") {
     setMenuFor(null);
     const key = `msg:${m.account}:${m.uid}`;
@@ -669,11 +746,14 @@ export default function Game() {
         </div>
       </header>
 
-      <Hud accounts={accounts} onAccountTap={(id) => setInboxOf(id)} />
+      <Hud accounts={accounts} onAccountTap={(id) => { setInboxOf(id); setMenuFor(null); setTrash(null); setTrashOpen(false); setMutedOpen(false); }} />
 
       <div className="flex items-center justify-between">
         <div className="font-pixel text-[9px] opacity-80">MISSIVES À EXPÉDIER : {pile.length}</div>
         <div className="flex gap-1.5">
+          <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowAgenda(true)} title="Agenda">
+            <IconCalendarClock size={16} /> {agenda.filter((e) => !e.done).length}
+          </button>
           <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowNotes(true)} title="Fourre-tout">
             <IconNotebook size={16} /> {notes.filter((n) => { const it = parseNoteItems(n.body); return it.length === 0 || it.some((i) => !i.done); }).length}
           </button>
@@ -726,7 +806,9 @@ export default function Game() {
         </div>
       )}
 
-      {showQuest && (
+      {/* Panneaux toujours montés (cachés en CSS) : le texte en cours de
+          saisie survit à la fermeture/réouverture. */}
+      <div className={showQuest ? "contents" : "hidden"}>
         <QuestPanel
           tasks={tasks}
           busy={!!busy}
@@ -739,9 +821,9 @@ export default function Game() {
           onPurge={questPurge}
           onUpdate={questUpdate}
         />
-      )}
+      </div>
 
-      {showNotes && (
+      <div className={showNotes ? "contents" : "hidden"}>
         <NotesPanel
           notes={notes}
           busy={!!busy}
@@ -751,7 +833,20 @@ export default function Game() {
           onUpdate={noteUpdate}
           onReorder={noteReorder}
         />
-      )}
+      </div>
+
+      <div className={showAgenda ? "contents" : "hidden"}>
+        <AgendaPanel
+          events={agenda}
+          busy={!!busy}
+          onClose={() => setShowAgenda(false)}
+          onAdd={agendaAdd}
+          onDone={agendaDone}
+          onUndone={agendaUndone}
+          onDelete={agendaDelete}
+          onUpdate={agendaUpdate}
+        />
+      </div>
 
       {/* Pile "de côté" */}
       {showAside && (
@@ -882,8 +977,14 @@ export default function Game() {
             </div>
             {muted.filter((mm) => mm.account === inbox.id).length > 0 && (
               <div className="mt-3 pt-3 border-t border-[#2a4a2a]">
-                <div className="font-pixel text-[7px] opacity-60 mb-2">CORRESPONDANTS BANNIS</div>
-                {muted.filter((mm) => mm.account === inbox.id).map((mm) => (
+                <button
+                  className="btn-pixel ghost w-full flex items-center justify-center gap-1.5 !py-1.5 font-pixel text-[7px]"
+                  onClick={() => setMutedOpen((o) => !o)}
+                >
+                  <IconChevronDown size={14} className={`transition-transform ${mutedOpen ? "rotate-180" : ""}`} />
+                  {muted.filter((mm) => mm.account === inbox.id).length} CORRESPONDANT(S) BANNI(S)
+                </button>
+                {mutedOpen && muted.filter((mm) => mm.account === inbox.id).map((mm) => (
                   <div key={mm.sender} className="flex items-center justify-between py-1.5 text-sm opacity-70">
                     <span className="truncate">{mm.sender}</span>
                     <button className="btn-pixel ghost !px-1.5 !py-1" title="Gracier"
@@ -909,7 +1010,7 @@ export default function Game() {
       )}
 
       {readingMsg && (
-        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" {...backdropProps(() => { setReadingMsg(null); setReadingCtx(null); setImproveText(null); })}>
+        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4" {...backdropProps(closeReadingMsg)}>
           <div className="card-parchment max-w-md w-full max-h-[80dvh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-1 break-all">DE : {readingMsg.from}</div>
             <div className="font-pixel text-[8px] text-[#8a6d3b] mb-3 break-words">SUJET : {readingMsg.subject}</div>
@@ -955,7 +1056,7 @@ export default function Game() {
                     <button className="btn-pixel flex-1 flex items-center justify-center gap-2" disabled={!!busy} onClick={() => setImproveText("")}>
                       <IconWand size={18} /> Reforger la missive
                     </button>
-                    <button className="btn-pixel ghost flex-1" onClick={() => { setReadingMsg(null); setReadingCtx(null); }}>Fermer</button>
+                    <button className="btn-pixel ghost flex-1" onClick={closeReadingMsg}>Fermer</button>
                   </div>
                 )}
               </div>
@@ -965,7 +1066,7 @@ export default function Game() {
                   onClick={async () => { const m = readingMsg; setReadingMsg(null); await msgAction(m, "generate"); }}>
                   <IconWand size={16} className="inline mr-1" /> Forger une missive
                 </button>
-                <button className="btn-pixel ghost flex-1" onClick={() => setReadingMsg(null)}>Fermer</button>
+                <button className="btn-pixel ghost flex-1" onClick={closeReadingMsg}>Fermer</button>
               </div>
             )}
           </div>

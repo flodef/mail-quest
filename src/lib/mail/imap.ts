@@ -209,12 +209,20 @@ function withAttachment(node: unknown): boolean {
   return (n.childNodes ?? []).some(withAttachment);
 }
 
-async function inboxStatsOn(client: ImapFlow, acc: MailAccount): Promise<{ unseen: number; total: number; latest: InboxItem[] }> {
+interface InboxStats {
+  unseen: number;
+  mutedUnseen: number;
+  total: number;
+  latest: InboxItem[];
+}
+
+async function inboxStatsOn(client: ImapFlow, acc: MailAccount, mutedSenders: string[] = []): Promise<InboxStats> {
   const lock = await client.getMailboxLock("INBOX");
   try {
     const status = await client.status("INBOX", { unseen: true, messages: true });
     const latest: InboxItem[] = [];
     const total: number = typeof status === "object" && status ? (status.messages ?? 0) : 0;
+    const unseen: number = typeof status === "object" && status ? (status.unseen ?? 0) : 0;
     if (total > 0) {
       const range = `${Math.max(1, total - 7)}:*`;
       for await (const msg of client.fetch(range, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
@@ -231,20 +239,31 @@ async function inboxStatsOn(client: ImapFlow, acc: MailAccount): Promise<{ unsee
         });
       }
     }
-    return { unseen: typeof status === "object" && status ? (status.unseen ?? 0) : 0, total, latest };
+    // Les non-lus d'expéditeurs bannis ne comptent pas dans les "quêtes".
+    // Scan complet des enveloppes (IMAP SEARCH peu fiable chez OVH — cf. inboxEnvelopes).
+    let mutedUnseen = 0;
+    if (unseen > 0 && mutedSenders.length > 0) {
+      const want = mutedSenders.map((s) => s.toLowerCase());
+      for await (const msg of client.fetch("1:*", { envelope: true, flags: true }, { uid: true })) {
+        if (msg.flags?.has("\\Seen")) continue;
+        const from = (msg.envelope?.from ?? []).map((a) => a.address ?? "").join(",").toLowerCase();
+        if (want.some((s) => from.includes(s))) mutedUnseen++;
+      }
+    }
+    return { unseen, mutedUnseen, total, latest };
   } finally {
     lock.release();
   }
 }
 
-export async function inboxStats(acc: MailAccount): Promise<{ unseen: number; total: number; latest: InboxItem[] }> {
-  return withClient(acc, (client) => inboxStatsOn(client, acc));
+export async function inboxStats(acc: MailAccount, mutedSenders: string[] = []): Promise<InboxStats> {
+  return withClient(acc, (client) => inboxStatsOn(client, acc, mutedSenders));
 }
 
 // Stats INBOX + drafts en UNE connexion (économie Fluid : 1 TLS+auth au lieu de 2).
-export async function fetchAccount(acc: MailAccount): Promise<{ stats: Awaited<ReturnType<typeof inboxStats>>; drafts: DraftSummary[] }> {
+export async function fetchAccount(acc: MailAccount, mutedSenders: string[] = []): Promise<{ stats: InboxStats; drafts: DraftSummary[] }> {
   return withClient(acc, async (client) => ({
-    stats: await inboxStatsOn(client, acc),
+    stats: await inboxStatsOn(client, acc, mutedSenders),
     drafts: await listDraftsOn(client, acc),
   }));
 }

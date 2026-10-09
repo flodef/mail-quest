@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { IconArrowBackUp, IconArrowLeft, IconChevronDown, IconClipboardCopy, IconCopyCheck, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
 import SortableList, { type GripProps } from "@/components/SortableList";
+import { copyToClipboard } from "@/lib/clipboard";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
 import type { Note } from "@/lib/db";
 
@@ -49,17 +50,7 @@ function NoteDetail({
   // Exporte la note dans le presse-papier : "• tâche" / "✅ tâche", 1 par ligne
   // (format réimportable via parseNoteItems).
   async function exportItems() {
-    const text = serializeNoteItems(items);
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
-    }
+    await copyToClipboard(serializeNoteItems(items));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -78,7 +69,8 @@ function NoteDetail({
   function itemDone(id: string) {
     const it = items.find((i) => i.id === id);
     if (!it) return;
-    save([...active.filter((i) => i.id !== id), ...done, { ...it, done: true }]);
+    // Fait → tout en haut de la section "faits" (le dernier terminé est visible).
+    save([...active.filter((i) => i.id !== id), { ...it, done: true }, ...done]);
   }
 
   function itemBottom(id: string) {
