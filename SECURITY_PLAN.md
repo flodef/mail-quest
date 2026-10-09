@@ -3,7 +3,8 @@
 Suivi de l'audit complet (voir détail dans la session). Légende : ⬜ à faire / ✅ fait.
 
 ## Étape 0 — Manuelle (hors code, à faire par le propriétaire)
-- ⬜ Rotation des secrets exposés dans les transcripts de session : 4 mots de passe mail (IMAP/SMTP), DATABASE_URL Neon, CRON_SECRET, clé API cron-job.org. Puis mettre à jour Vercel + `.env.local` + `pass`.
+- ⬜ Rotation des secrets exposés dans les transcripts de session : 4 mots de passe mail (IMAP/SMTP), DATABASE_URL Neon, clé API cron-job.org. Puis mettre à jour Vercel + `.env.local` + `pass`.
+  (✅ `CRON_SECRET` déjà rotaté : Vercel + pass + .env.local + headers des 2 jobs cron-job.org.)
 
 ## Étape 1 — Failles critiques
 - ✅ C1 XSS mails : sanitize-html serveur (getMessage/getDraft), variantes `html` / `htmlNoImg` (images distantes bloquées par défaut + bouton « afficher »), iframe sandboxé `allow-same-origin allow-popups` (jamais `allow-scripts`), liens `target=_blank rel=noopener`, auto-height via contentDocument.
