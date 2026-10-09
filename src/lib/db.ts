@@ -291,7 +291,10 @@ export async function updateAgendaSchedule(id: string, dueAt: string, remindMinu
 }
 
 export async function setAgendaDone(id: string, done: boolean): Promise<void> {
-  await sql()`UPDATE agenda SET done=${done} WHERE id=${id}`;
+  // Restauration (done=false) → réarme le rappel si l'échéance est encore future.
+  await sql()`UPDATE agenda SET done=${done},
+    reminded_at = CASE WHEN ${done} THEN reminded_at ELSE NULL END
+    WHERE id=${id}`;
 }
 
 export async function deleteAgenda(id: string): Promise<void> {

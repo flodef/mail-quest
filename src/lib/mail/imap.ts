@@ -241,6 +241,8 @@ async function inboxStatsOn(client: ImapFlow, acc: MailAccount, mutedSenders: st
     }
     // Les non-lus d'expéditeurs bannis ne comptent pas dans les "quêtes".
     // Scan complet des enveloppes (IMAP SEARCH peu fiable chez OVH — cf. inboxEnvelopes).
+    // Coût : 1 fetch 1:* par compte ayant des bannis, à chaque overview (cache 60 s)
+    // et run cron — acceptable sur ces boîtes perso, à réviser si ça grossit.
     let mutedUnseen = 0;
     if (unseen > 0 && mutedSenders.length > 0) {
       const want = mutedSenders.map((s) => s.toLowerCase());

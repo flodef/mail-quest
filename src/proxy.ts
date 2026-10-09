@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/cron", "/manifest.webmanifest", "/sw.js", "/icon", "/apple-touch-icon", "/_next", "/favicon"];
+// /api/cron et /api/reminders se protègent eux-mêmes via CRON_SECRET (Bearer).
+const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/cron", "/api/reminders", "/manifest.webmanifest", "/sw.js", "/icon", "/apple-touch-icon", "/_next", "/favicon"];
 
 async function expectedToken(): Promise<string | null> {
   const s = process.env.MAIL_PASSCODE;

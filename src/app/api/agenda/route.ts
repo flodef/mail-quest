@@ -35,7 +35,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
   const body = await req.json().catch(() => ({}));
-  if (typeof body.id !== "string") return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!isUuid(body.id)) return NextResponse.json({ error: "valid id required" }, { status: 400 });
   if (typeof body.done === "boolean") {
     await setAgendaDone(body.id, body.done);
   } else if (isDate(body.dueAt)) {
@@ -52,7 +52,7 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
   const id = new URL(req.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!isUuid(id)) return NextResponse.json({ error: "valid id required" }, { status: 400 });
   await deleteAgenda(id);
   return NextResponse.json({ ok: true });
 }

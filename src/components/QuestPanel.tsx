@@ -184,7 +184,7 @@ export default function QuestPanel({
             </div>
           )}
           <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · QUÊTE FAITE ▶ · TOUCHER POUR ÉDITER</div>
-  
+
           {done.length > 0 && (
             <>
               <div className="flex items-center justify-between mt-1">
