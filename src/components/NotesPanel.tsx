@@ -3,8 +3,10 @@
 import { useMemo, useRef, useState } from "react";
 import { IconArrowBackUp, IconArrowLeft, IconChevronDown, IconClipboardCopy, IconCopyCheck, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
+import Sheet from "@/components/Sheet";
 import SortableList, { type GripProps } from "@/components/SortableList";
 import { copyToClipboard } from "@/lib/clipboard";
+import { fmtShort } from "@/lib/dates";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
 import type { Note } from "@/lib/db";
 
@@ -12,11 +14,6 @@ type Item = NoteItem & { id: string };
 
 function parseItems(body: string): Item[] {
   return parseNoteItems(body).map((i, n) => ({ ...i, id: `i${n}` }));
-}
-
-function fmtNoteDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
 // Compte "fait/total" des items d'une note ; `allDone` quand tout est terminé.
@@ -107,7 +104,7 @@ function NoteDetail({
         </button>
         <button className="shrink-0 opacity-50 hover:opacity-100" disabled={busy} onClick={() => onDelete(note.id)} title="Jeter la note"><IconTrash size={16} /></button>
       </div>
-      <div className="font-pixel text-[6px] opacity-50">{fmtNoteDate(note.created_at)}</div>
+      <div className="font-pixel text-[6px] opacity-50">{fmtShort(note.created_at)}</div>
 
       <div className="flex gap-2">
         <input
@@ -196,7 +193,7 @@ function NoteCard({
             .map((i) => i.text)
             .join("\n") || note.body}
         </div>
-        <div className="font-pixel text-[6px] opacity-50">{fmtNoteDate(note.created_at)}</div>
+        <div className="font-pixel text-[6px] opacity-50">{fmtShort(note.created_at)}</div>
       </button>
     </div>
   );
@@ -222,7 +219,6 @@ export default function NotesPanel({
   const [input, setInput] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
-  const downOnBackdrop = useRef(false);
   const open = notes.find((n) => n.id === openId) ?? null;
 
   // Groupes terminés (tous les items faits) : relégués en bas, masqués par défaut.
@@ -245,18 +241,11 @@ export default function NotesPanel({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-40 bg-black/70 flex items-end"
-      onPointerDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
-      onClick={(e) => {
-        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <div className="font-pixel text-[9px] text-[var(--gold-bright)]">📒 FOURRE-TOUT ({notes.length})</div>
-          <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
-        </div>
+    <Sheet onClose={onClose}>
+      <div className="flex items-center justify-between">
+        <div className="font-pixel text-[9px] text-[var(--gold-bright)]">📒 FOURRE-TOUT ({notes.length})</div>
+        <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
+      </div>
 
         {open ? (
           <NoteDetail
@@ -308,7 +297,6 @@ export default function NotesPanel({
             )}
           </>
         )}
-      </div>
-    </div>
+    </Sheet>
   );
 }

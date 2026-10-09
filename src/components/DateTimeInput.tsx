@@ -22,11 +22,13 @@ export default function DateTimeInput({
   onChange,
   disabled = false,
   min,
+  className = "",
 }: {
   value: Date | null;
   onChange: (d: Date) => void;
   disabled?: boolean;
   min?: Date;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -38,14 +40,17 @@ export default function DateTimeInput({
 
   const shown = value ?? fallbackNow;
 
-  // Ferme le popover au clic hors du champ.
+  // Ferme le popover au clic hors du champ — l'écouteur n'existe que tant
+  // que le popover est ouvert (le composant reste monté quand le panneau
+  // agenda est caché).
   useEffect(() => {
+    if (!open) return;
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, []);
+  }, [open]);
 
   const clickSeg = (s: Seg) => (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -88,7 +93,8 @@ export default function DateTimeInput({
       if (nd.length < maxDigits) return;
       const n = parseInt(nd);
       const d = new Date(value);
-      if (seg === "day" && n >= 1 && n <= 31) d.setDate(n);
+      // setDate(31) en février déborde en mars : on borne au dernier jour du mois.
+      if (seg === "day" && n >= 1 && n <= 31) d.setDate(Math.min(n, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
       else if (seg === "month" && n >= 1 && n <= 12) d.setMonth(n - 1);
       else if (seg === "year" && n > 0) d.setFullYear(n);
       else if (seg === "hour" && n <= 23) d.setHours(n);
@@ -117,7 +123,7 @@ export default function DateTimeInput({
 
   const setTime = (hours: number, minutes: number) => {
     const base = value ?? new Date();
-    onChange(new Date(base.getFullYear(), base.getMonth(), base.getDate(), hours, minutes));
+    apply(new Date(base.getFullYear(), base.getMonth(), base.getDate(), hours, minutes));
   };
 
   const segValue = (s: Seg): string => {
@@ -136,7 +142,7 @@ export default function DateTimeInput({
   );
 
   return (
-    <div className="relative flex-1 min-w-0" ref={ref}>
+    <div className={`relative min-w-0 ${className || "flex-1"}`} ref={ref}>
       <div
         tabIndex={disabled ? -1 : 0}
         onKeyDown={handleKeyDown}

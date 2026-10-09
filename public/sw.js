@@ -10,7 +10,9 @@ self.addEventListener("push", (event) => {
       body: data.body ?? "",
       icon: data.icon ?? "/icon-192.png",
       badge: "/icon-192.png",
-      tag: "mail-quest",
+      // Tag par compte/source : les notifications ne s'écrasent que si elles
+      // viennent de la même boîte.
+      tag: data.tag ?? "mail-quest",
       renotify: true,
       data: { url: "/" },
     }),
@@ -19,7 +21,16 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url ?? "/"));
+  // Met au premier plan l'app déjà ouverte plutôt que d'empiler les fenêtres.
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const target = event.notification.data?.url ?? "/";
+      for (const w of wins) {
+        if (new URL(w.url).origin === self.location.origin) return w.focus();
+      }
+      return clients.openWindow(target);
+    }),
+  );
 });
 
 self.addEventListener("fetch", (event) => {
@@ -29,11 +40,13 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
 
   // Navigation : réseau d'abord, shell en cache si hors-ligne.
+  // Seule la racine "/" est mise en cache — sinon une visite de /login
+  // écraserait le shell offline avec la page de connexion.
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req)
         .then((r) => {
-          if (r.ok) {
+          if (r.ok && url.pathname === "/") {
             const clone = r.clone();
             caches.open(SHELL_CACHE).then((c) => c.put("/", clone));
           }

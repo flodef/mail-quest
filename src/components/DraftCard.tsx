@@ -2,16 +2,9 @@
 
 import { useState } from "react";
 import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
+import type { Draft } from "@/lib/types";
 
-export interface Draft {
-  account: string;
-  mailbox: string;
-  uid: number;
-  to: string;
-  subject: string;
-  date: string | null;
-  preview: string;
-}
+export type { Draft };
 
 const SWIPE_X = 110;
 
@@ -72,6 +65,11 @@ export default function DraftCard({
         <div className="flex items-center gap-2">
           <span className="w-4 h-4 rounded-[2px]" style={{ background: accountColor }} />
           <span className="font-pixel text-[8px] uppercase text-[#8a6d3b]">{draft.account}</span>
+          {draft.ai && (
+            <span className="font-pixel text-[7px] px-1 py-0.5 border border-[#8a6d3b] text-[#8a6d3b] ml-auto" title="Brouillon forgé par l'IA — relis avant d'envoyer">
+              🤖 IA
+            </span>
+          )}
         </div>
 
         <div className="text-xl leading-tight break-words">

@@ -8,51 +8,69 @@ import {
   updateAgendaSchedule,
   updateAgendaText,
 } from "@/lib/db";
+import { internalError, isUuid, parseJson } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-const isUuid = (v: unknown): v is string =>
-  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-
 const isDate = (v: unknown): v is string => typeof v === "string" && !Number.isNaN(Date.parse(v));
+const TEXT_MAX = 1000;
+const REMIND_MAX_MIN = 30 * 24 * 60; // 30 jours
+const remindOk = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= REMIND_MAX_MIN;
 
 export async function GET() {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
-  return NextResponse.json({ events: await listAgenda() });
+  try {
+    return NextResponse.json({ events: await listAgenda() });
+  } catch (e) {
+    return internalError(e, "agenda");
+  }
 }
 
 export async function POST(req: Request) {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
-  const body = await req.json().catch(() => ({}));
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  const body = await parseJson(req);
+  const text = typeof body?.text === "string" ? body.text.trim() : "";
   if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
-  if (!isDate(body.dueAt)) return NextResponse.json({ error: "dueAt required" }, { status: 400 });
-  const remind = Number.isInteger(body.remindMinutes) && body.remindMinutes >= 0 ? body.remindMinutes : 30;
-  const event = await addAgenda(text, new Date(body.dueAt).toISOString(), remind, isUuid(body.id) ? body.id : undefined);
-  return NextResponse.json({ ok: true, event });
+  if (text.length > TEXT_MAX) return NextResponse.json({ error: "text too long" }, { status: 400 });
+  if (!isDate(body?.dueAt)) return NextResponse.json({ error: "dueAt required" }, { status: 400 });
+  const remind = remindOk(body.remindMinutes) ? body.remindMinutes : 30;
+  try {
+    const event = await addAgenda(text, new Date(body.dueAt).toISOString(), remind, isUuid(body.id) ? body.id : undefined);
+    return NextResponse.json({ ok: true, event });
+  } catch (e) {
+    return internalError(e, "agenda");
+  }
 }
 
 export async function PATCH(req: Request) {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
-  const body = await req.json().catch(() => ({}));
-  if (!isUuid(body.id)) return NextResponse.json({ error: "valid id required" }, { status: 400 });
-  if (typeof body.done === "boolean") {
-    await setAgendaDone(body.id, body.done);
-  } else if (isDate(body.dueAt)) {
-    const remind = Number.isInteger(body.remindMinutes) && body.remindMinutes >= 0 ? body.remindMinutes : 30;
-    await updateAgendaSchedule(body.id, new Date(body.dueAt).toISOString(), remind);
-  } else if (typeof body.text === "string" && body.text.trim()) {
-    await updateAgendaText(body.id, body.text.trim());
-  } else {
-    return NextResponse.json({ error: "nothing to do" }, { status: 400 });
+  const body = await parseJson(req);
+  if (!isUuid(body?.id)) return NextResponse.json({ error: "valid id required" }, { status: 400 });
+  try {
+    if (typeof body.done === "boolean") {
+      await setAgendaDone(body.id, body.done);
+    } else if (isDate(body.dueAt)) {
+      const remind = remindOk(body.remindMinutes) ? body.remindMinutes : 30;
+      await updateAgendaSchedule(body.id, new Date(body.dueAt).toISOString(), remind);
+    } else if (typeof body.text === "string" && body.text.trim() && body.text.length <= TEXT_MAX) {
+      await updateAgendaText(body.id, body.text.trim());
+    } else {
+      return NextResponse.json({ error: "nothing to do" }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return internalError(e, "agenda");
   }
-  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: Request) {
   if (!dbReady()) return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
   const id = new URL(req.url).searchParams.get("id");
   if (!isUuid(id)) return NextResponse.json({ error: "valid id required" }, { status: 400 });
-  await deleteAgenda(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteAgenda(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return internalError(e, "agenda");
+  }
 }

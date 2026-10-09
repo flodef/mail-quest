@@ -2,19 +2,11 @@
 
 import { IconMail, IconHourglass } from "@tabler/icons-react";
 
-export interface AccountBadge {
-  id: string;
-  label: string;
-  color: string;
-  unseen?: number;
-  draftCount?: number;
-  asideCount?: number;
-  error?: string;
-}
+import type { AccountBadge } from "@/lib/types";
 
 export default function Hud({ accounts, onAccountTap }: { accounts: AccountBadge[]; onAccountTap: (id: string) => void }) {
   return (
-    <div className="grid grid-cols-4 gap-1.5">
+    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(accounts.length, 1)}, minmax(0, 1fr))` }}>
       {accounts.map((a) => (
         <button
           key={a.id}

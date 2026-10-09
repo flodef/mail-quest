@@ -6,7 +6,13 @@ import { invalidateMail } from "@/lib/cache";
 
 export async function POST() {
   if (!dbReady()) return NextResponse.json({ error: "db unavailable" }, { status: 503 });
-  const asides = await listAsides();
+  // Échec DB → 500 explicite plutôt que "cleared: 0" (la jarre UI serait
+  // vidée à tort).
+  const asides = await listAsides().catch((e) => {
+    console.error("[aside/clear]", e instanceof Error ? e.message : e);
+    return null;
+  });
+  if (asides === null) return NextResponse.json({ error: "db error" }, { status: 500 });
   const accountIds = new Set(getAccounts().map((a) => a.id));
   const byAccount = new Map<string, number[]>();
   for (const a of asides) {
@@ -20,7 +26,8 @@ export async function POST() {
       cleared += await clearDraftsToTrash(getAccount(account), uids);
       for (const uid of uids) await removeAside(account, uid);
     } catch (e) {
-      errors.push(`${account}: ${e instanceof Error ? e.message : e}`);
+      console.error("[aside/clear]", account, e instanceof Error ? e.message : e);
+      errors.push(account);
     }
   }
   if (cleared > 0) invalidateMail();

@@ -11,6 +11,7 @@ import {
 // Throttle des checks paresseux (appelés à chaque /api/overview) : la vraie
 // planification est assurée par /api/cron et /api/reminders (ping externe).
 let lastCheck = 0;
+let warnedNoRecipient = false;
 const CHECK_EVERY_MS = 60_000;
 
 function fmtWhen(iso: string): string {
@@ -24,20 +25,29 @@ function fmtWhen(iso: string): string {
   });
 }
 
-async function sendReminder(ev: AgendaEvent): Promise<void> {
+async function sendReminder(ev: AgendaEvent, to: string): Promise<void> {
   const accounts = getAccounts();
   const acc = accounts.find((a) => a.id === process.env.REMINDER_ACCOUNT) ?? accounts[0];
   if (!acc) throw new Error("aucun compte SMTP configuré");
-  const to = process.env.REMINDER_TO ?? "flodef@pm.me";
   await sendMail(acc, {
     to,
-    subject: `⏰ Rappel : ${ev.text}`,
+    subject: `⏰ Rappel : ${ev.text.replace(/[\r\n]+/g, " ")}`,
     text: `${ev.text}\n\nPrévu le ${fmtWhen(ev.due_at)} (heure de Paris).\n\n— Mail Quest`,
   });
 }
 
 export async function checkReminders(force = false): Promise<number> {
   if (!dbReady()) return 0;
+  // REMINDER_TO requis pour l'envoi — sans lui, on ne consomme pas les claims
+  // (les rappels repartiront dès que la variable sera configurée).
+  const to = process.env.REMINDER_TO;
+  if (!to) {
+    if (!warnedNoRecipient) {
+      warnedNoRecipient = true;
+      console.warn("[reminders] REMINDER_TO non configuré — checks ignorés tant que la variable manque");
+    }
+    return 0;
+  }
   const now = Date.now();
   if (!force && now - lastCheck < CHECK_EVERY_MS) return 0;
   lastCheck = now;
@@ -46,9 +56,10 @@ export async function checkReminders(force = false): Promise<number> {
   for (const ev of due) {
     if (!(await claimAgendaReminder(ev.id))) continue;
     try {
-      await sendReminder(ev);
+      await sendReminder(ev, to);
       sent++;
-    } catch {
+    } catch (e) {
+      console.error("[reminders] envoi échoué:", ev.id, e instanceof Error ? e.message : e);
       // Échec SMTP : on désarme pour retenter au prochain passage.
       await unclaimAgendaReminder(ev.id).catch(() => {});
     }

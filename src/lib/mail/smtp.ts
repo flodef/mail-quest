@@ -19,8 +19,13 @@ export async function sendMail(acc: MailAccount, opts: { to: string; subject: st
   });
 }
 
-export async function sendDraft(acc: MailAccount, mailbox: string, uid: number): Promise<{ to: string; subject: string }> {
-  const draft = await getDraft(acc, mailbox, uid);
+/**
+ * Envoie le brouillon puis le déplace à la corbeille. `moved=false` signale
+ * que le mail est parti mais que le brouillon n'a pas pu être déplacé — le
+ * client avertit au lieu de renvoyer en boucle.
+ */
+export async function sendDraft(acc: MailAccount, uid: number): Promise<{ to: string; subject: string; moved: boolean }> {
+  const draft = await getDraft(acc, uid);
   if (!draft) throw new Error("Draft not found");
   if (!draft.to.trim()) throw new Error("Draft has no recipient");
 
@@ -31,6 +36,6 @@ export async function sendDraft(acc: MailAccount, mailbox: string, uid: number):
     text: draft.text ?? undefined,
     html: draft.html ?? undefined,
   });
-  await moveDraft(acc, mailbox, uid);
-  return { to: draft.to, subject: draft.subject };
+  const moved = await moveDraft(acc, uid).then(() => true, () => false);
+  return { to: draft.to, subject: draft.subject, moved };
 }

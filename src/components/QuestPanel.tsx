@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { IconArrowBackUp, IconCheck, IconChevronDown, IconClipboardCopy, IconCopyCheck, IconPlus, IconSearch, IconSkull, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
+import Sheet from "@/components/Sheet";
 import SortableList from "@/components/SortableList";
 import { copyToClipboard } from "@/lib/clipboard";
 import type { Task } from "@/lib/db";
@@ -36,9 +37,6 @@ export default function QuestPanel({
   const [copied, setCopied] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
-  // Un swipe de ligne relâché hors du panneau produit un click sur le backdrop
-  // — ne fermer que si le press a aussi commencé sur le backdrop.
-  const downOnBackdrop = useRef(false);
   const [showReserve, setShowReserve] = useState(false);
   const active = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
@@ -74,15 +72,8 @@ export default function QuestPanel({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-40 bg-black/70 flex items-end"
-      onPointerDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
-      onClick={(e) => {
-        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="panel w-full max-w-md mx-auto p-4 max-h-[80dvh] overflow-y-auto flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
+    <Sheet onClose={onClose}>
+      <div className="flex items-center justify-between">
           <div className="font-pixel text-[9px] text-[var(--gold-bright)]">⚔ QUÊTES ({active.length})</div>
           <div className="flex items-center gap-1.5">
             <button
@@ -212,7 +203,6 @@ export default function QuestPanel({
           )}
           </>
         )}
-      </div>
-    </div>
+    </Sheet>
   );
 }

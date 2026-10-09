@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { neon } from "@neondatabase/serverless";
 
 export function dbReady(): boolean {
@@ -66,6 +67,16 @@ export async function initDb(): Promise<void> {
     done BOOLEAN NOT NULL DEFAULT false,
     reminded_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now()
+  )`;
+  await q`CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+  )`;
+  await q`CREATE TABLE IF NOT EXISTS login_attempts (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ip TEXT NOT NULL,
+    attempted_at TIMESTAMPTZ DEFAULT now()
   )`;
   inited = true;
 }
@@ -181,9 +192,9 @@ export async function taskToBottom(id: string): Promise<void> {
 }
 
 export async function reorderTasks(ids: string[]): Promise<void> {
-  for (const [i, id] of ids.entries()) {
-    await sql()`UPDATE tasks SET position=${i} WHERE id=${id}`;
-  }
+  if (!ids.length) return;
+  const q = sql();
+  await q.transaction(ids.map((id, i) => q`UPDATE tasks SET position=${i} WHERE id=${id}`));
 }
 
 export async function purgeDoneTasks(): Promise<number> {
@@ -231,9 +242,9 @@ export async function addNote(title: string, body: string, id?: string): Promise
 }
 
 export async function reorderNotes(ids: string[]): Promise<void> {
-  for (const [i, id] of ids.entries()) {
-    await sql()`UPDATE notes SET position=${i} WHERE id=${id}`;
-  }
+  if (!ids.length) return;
+  const q = sql();
+  await q.transaction(ids.map((id, i) => q`UPDATE notes SET position=${i} WHERE id=${id}`));
 }
 
 export async function deleteNote(id: string): Promise<void> {
@@ -330,9 +341,59 @@ export async function listInboxOrder(): Promise<{ account: string; uid: number }
 }
 
 export async function setInboxOrder(account: string, uids: number[]): Promise<void> {
+  // Liste vide = réinitialiser l'ordre du compte : la transaction contient
+  // toujours au moins le DELETE.
   await ensureDb();
-  await sql()`DELETE FROM inbox_order WHERE account=${account}`;
-  for (const [i, uid] of uids.entries()) {
-    await sql()`INSERT INTO inbox_order (account, uid, position) VALUES (${account}, ${uid}, ${i})`;
-  }
+  const q = sql();
+  await q.transaction([
+    q`DELETE FROM inbox_order WHERE account=${account}`,
+    ...uids.map((uid, i) => q`INSERT INTO inbox_order (account, uid, position) VALUES (${account}, ${uid}, ${i})`),
+  ]);
+}
+
+// --- Sessions (jetons aléatoires révocables) ---
+
+// Seul le SHA-256 du jeton est stocké : une lecture de la table ne donne
+// aucun jeton utilisable. Le cookie client garde la valeur brute.
+const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+export async function createSession(token: string, days: number): Promise<void> {
+  await ensureDb();
+  await sql()`INSERT INTO sessions (token, expires_at) VALUES (${hashToken(token)}, now() + make_interval(days => ${days}))`;
+  await sql()`DELETE FROM sessions WHERE expires_at < now()`.catch(() => {});
+}
+
+export async function sessionValid(token: string): Promise<boolean> {
+  if (!dbReady()) return false;
+  await ensureDb();
+  const rows = await sql()`SELECT 1 FROM sessions WHERE token=${hashToken(token)} AND expires_at > now() LIMIT 1`;
+  return rows.length > 0;
+}
+
+export async function deleteSession(token: string): Promise<void> {
+  if (!dbReady()) return;
+  await sql()`DELETE FROM sessions WHERE token=${hashToken(token)}`;
+}
+
+// --- Rate-limit du login ---
+
+const LOGIN_WINDOW_MIN = 15;
+const LOGIN_MAX_ATTEMPTS = 20;
+// Sans x-real-ip/XFF (hors Vercel), tous les clients partagent l'IP
+// "unknown" — ils peuvent se bloquer mutuellement (limite connue).
+
+export async function tooManyLoginAttempts(ip: string): Promise<boolean> {
+  if (!dbReady()) return false;
+  await ensureDb();
+  const rows = await sql()`
+    SELECT count(*)::int AS n FROM login_attempts
+    WHERE ip=${ip} AND attempted_at > now() - make_interval(mins => ${LOGIN_WINDOW_MIN})`;
+  return ((rows[0] as { n: number }).n ?? 0) >= LOGIN_MAX_ATTEMPTS;
+}
+
+export async function recordLoginAttempt(ip: string): Promise<void> {
+  if (!dbReady()) return;
+  await ensureDb();
+  await sql()`INSERT INTO login_attempts (ip) VALUES (${ip})`;
+  await sql()`DELETE FROM login_attempts WHERE attempted_at < now() - interval '1 day'`.catch(() => {});
 }

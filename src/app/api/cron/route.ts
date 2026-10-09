@@ -4,15 +4,14 @@ import { inboxStats } from "@/lib/mail/imap";
 import { dbReady, getLastSeen, listMuted, setLastSeen, initDb } from "@/lib/db";
 import { notifyAll } from "@/lib/push";
 import { checkReminders } from "@/lib/reminders";
+import { checkCronAuth } from "@/lib/auth";
+import { jsonError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const auth = req.headers.get("authorization");
-  const secret = process.env.CRON_SECRET;
-  if (secret && auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const auth = checkCronAuth(req);
+  if (!auth.ok) return jsonError(auth.status, auth.error);
   if (!dbReady()) {
     return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 503 });
   }
@@ -31,7 +30,7 @@ export async function GET(req: Request) {
       // messages — sinon une pile de non-lus passe sous silence.
       if (prev !== null && unseen > prev) {
         events.push(`${acc.label}: ${unseen - prev} nouveau(x)`);
-        await notifyAll(`📬 ${acc.label}`, newest ? `De: ${newest.from}\n${newest.subject}` : `${unseen - prev} nouveau(x) non lu(s)`);
+        await notifyAll(`📬 ${acc.label}`, newest ? `De: ${newest.from}\n${newest.subject}` : `${unseen - prev} nouveau(x) non lu(s)`, acc.id);
       }
       await setLastSeen(acc.id, unseen);
     } catch (e) {

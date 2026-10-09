@@ -42,7 +42,11 @@ export async function GET() {
       accounts: results.map((r, i) =>
         r.status === "fulfilled"
           ? r.value
-          : { id: accounts[i].id, label: accounts[i].label, color: accounts[i].color, error: String(r.reason?.message ?? r.reason), active: [], aside: [] },
+          : (() => {
+              // Détails IMAP loggés serveur — le client reçoit un flag générique.
+              console.error("[overview]", accounts[i].id, r.reason instanceof Error ? r.reason.message : r.reason);
+              return { id: accounts[i].id, label: accounts[i].label, color: accounts[i].color, error: "unreachable", active: [], aside: [] };
+            })(),
       ),
       muted: mutedRows,
     };

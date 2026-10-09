@@ -1,7 +1,9 @@
-import { createHash, timingSafeEqual } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
+import { createSession, dbReady, deleteSession } from "@/lib/db";
 
-const COOKIE = "mq_session";
+export const SESSION_COOKIE = "mq_session";
+const SESSION_DAYS = 90;
 
 function secret(): string {
   const s = process.env.MAIL_PASSCODE;
@@ -9,33 +11,51 @@ function secret(): string {
   return s;
 }
 
-function sessionToken(): string {
-  return createHash("sha256").update(`${secret()}::mail-quest-v1`).digest("hex");
+/** Comparaison en temps constant (anti timing-attack). */
+export function safeEq(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ba.length === bb.length && timingSafeEqual(ba, bb);
 }
 
 export function checkPasscode(input: string): boolean {
-  const a = Buffer.from(input);
-  const b = Buffer.from(secret());
-  return a.length === b.length && timingSafeEqual(a, b);
+  return safeEq(input, secret());
 }
 
+/** Crée une session aléatoire en base et pose le cookie. */
 export async function setSession(): Promise<void> {
+  // Pas de DB = pas de session validable par le proxy : échouer ici plutôt
+  // que de poser un cookie qui ne laisserait jamais passer l'utilisateur.
+  if (!dbReady()) throw new Error("DATABASE_URL requis pour ouvrir une session");
+  const token = `${randomUUID()}${randomUUID().replace(/-/g, "")}`; // ~256 bits
+  await createSession(token, SESSION_DAYS);
   const jar = await cookies();
-  jar.set(COOKIE, sessionToken(), {
+  jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: true,
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 90,
+    maxAge: 60 * 60 * 24 * SESSION_DAYS,
     path: "/",
   });
 }
 
 export async function clearSession(): Promise<void> {
   const jar = await cookies();
-  jar.delete(COOKIE);
+  const token = jar.get(SESSION_COOKIE)?.value;
+  if (token) await deleteSession(token).catch(() => {});
+  jar.delete(SESSION_COOKIE);
 }
 
-export async function isAuthed(): Promise<boolean> {
-  const jar = await cookies();
-  return jar.get(COOKIE)?.value === sessionToken();
+/**
+ * Les routes appelées par un scheduler externe (cron-job.org) se protègent
+ * elles-mêmes par Bearer CRON_SECRET — fail-closed : sans secret configuré,
+ * la route est injoignable.
+ */
+export function checkCronAuth(req: Request): { ok: true } | { ok: false; status: number; error: string } {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return { ok: false, status: 503, error: "CRON_SECRET non configuré" };
+  if (!safeEq(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) {
+    return { ok: false, status: 401, error: "unauthorized" };
+  }
+  return { ok: true };
 }

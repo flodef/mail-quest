@@ -3,8 +3,10 @@
 
 export type NoteItem = { text: string; done: boolean };
 
-const DONE_RE = /^(?:[✅✔☑]|-\s*\[[xX]\])\s*/;
-const BULLET_RE = /^(?:[•\-–—*]|-\s*\[ \])\s*/;
+// Attention : les formes "- [ ]"/"- [x]" doivent précéder la classe de
+// puces — sinon le "-" seul est consommé d'abord et "[ ]" survit.
+const DONE_RE = /^(?:-\s*\[[xX]\]|[✅✔☑])\s*/;
+const BULLET_RE = /^(?:-\s*\[ \]|[•\-–—*])\s*/;
 
 export function parseNoteItems(body: string): NoteItem[] {
   return body
