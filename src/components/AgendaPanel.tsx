@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { IconArrowBackUp, IconCheck, IconChevronDown, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
+import DateTimeInput from "@/components/DateTimeInput";
 import type { AgendaEvent } from "@/lib/db";
 
 export const REMIND_OPTIONS = [
@@ -136,7 +137,7 @@ export default function AgendaPanel({
   onUpdate: (id: string, text: string) => void;
 }) {
   const [text, setText] = useState("");
-  const [when, setWhen] = useState("");
+  const [when, setWhen] = useState<Date | null>(null);
   const [remind, setRemind] = useState(30);
   const [showDone, setShowDone] = useState(false);
   const downOnBackdrop = useRef(false);
@@ -152,11 +153,10 @@ export default function AgendaPanel({
 
   function submit() {
     const t = text.trim();
-    const d = new Date(when);
-    if (!t || Number.isNaN(+d)) return;
-    onAdd(t, d.toISOString(), remind);
+    if (!t || !when) return;
+    onAdd(t, when.toISOString(), remind);
     setText("");
-    setWhen("");
+    setWhen(null);
     setRemind(30);
   }
 
@@ -182,13 +182,8 @@ export default function AgendaPanel({
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
-          <div className="flex gap-2">
-            <input
-              type="datetime-local"
-              className="flex-1 min-w-0 bg-[var(--shadow)] border-2 border-[var(--gold)] px-3 py-2 text-base outline-none focus:border-[var(--gold-bright)] [color-scheme:dark]"
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-            />
+          <div className="flex gap-2 items-center">
+            <DateTimeInput value={when} onChange={setWhen} disabled={busy} />
             <select
               className="bg-[var(--shadow)] border-2 border-[var(--gold)] px-2 py-2 text-base outline-none focus:border-[var(--gold-bright)] [color-scheme:dark]"
               value={remind}
