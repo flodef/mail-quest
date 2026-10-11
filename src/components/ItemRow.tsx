@@ -14,15 +14,19 @@ export default function ItemRow<T>({
   onBottom,
   onEdit,
   dim = false,
+  strike = false,
   doneLabel = "⚔ FAIT",
   bottomLabel = "⇣ FOND",
 }: {
   item: T;
-  grip: GripProps;
+  /** Absent → pas de poignée ☰ (item non triable, ex. trophées). */
+  grip?: GripProps;
   onDone: () => void;
   onBottom: () => void;
   onEdit?: (text: string) => void;
   dim?: boolean;
+  /** Texte barré (quête accomplie). */
+  strike?: boolean;
   doneLabel?: string;
   bottomLabel?: string;
 }) {
@@ -67,20 +71,22 @@ export default function ItemRow<T>({
       {/* Poignée HORS de la zone swipe : glisser ☰ horizontalement ne doit
           jamais déclencher l'action gauche/droite (framer capte le pointeur
           en natif avant le stopPropagation de React). */}
-      <button
-        {...grip}
-        className="absolute left-0 top-0 bottom-0 w-6 z-20 flex items-center justify-center opacity-50 cursor-grab active:cursor-grabbing touch-none"
-        aria-label="Réordonner"
-      >
-        <IconGripVertical size={16} />
-      </button>
+      {grip && (
+        <button
+          {...grip}
+          className="absolute left-0 top-0 bottom-0 w-6 z-20 flex items-center justify-center opacity-50 cursor-grab active:cursor-grabbing touch-none"
+          aria-label="Réordonner"
+        >
+          <IconGripVertical size={16} />
+        </button>
+      )}
       <motion.div
         drag={editing ? false : "x"}
         dragConstraints={{ left: 0, right: 0 }}
         dragElastic={0.6}
         onDragEnd={onDragEnd}
         style={{ x }}
-        className={`flex items-center gap-2 bg-[var(--shadow)] py-2.5 pr-2.5 pl-7 border border-[#3a5a2a] select-none${dim ? " opacity-60" : ""}`}
+        className={`flex items-center gap-2 bg-[var(--shadow)] py-2.5 pr-2.5 ${grip ? "pl-7" : "pl-2.5"} border border-[#3a5a2a] select-none${dim ? " opacity-60" : ""}`}
       >
         {editing ? (
           <>
@@ -101,7 +107,7 @@ export default function ItemRow<T>({
           </>
         ) : (
           <div
-            className={`flex-1 min-w-0 text-lg leading-snug break-words${onEdit ? " cursor-text" : ""}`}
+            className={`flex-1 min-w-0 text-lg leading-snug break-words${onEdit ? " cursor-text" : ""}${strike ? " line-through" : ""}`}
             onPointerDown={() => (dragged.current = false)}
             onClick={() => {
               if (dragged.current || !onEdit) return;

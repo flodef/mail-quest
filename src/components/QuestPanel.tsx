@@ -20,6 +20,7 @@ export default function QuestPanel({
   onBottom,
   onReorder,
   onPurge,
+  onPurgeOne,
   onUpdate,
 }: {
   tasks: Task[];
@@ -31,6 +32,7 @@ export default function QuestPanel({
   onBottom: (id: string) => void;
   onReorder: (ids: string[]) => void;
   onPurge: () => void;
+  onPurgeOne: (id: string) => void;
   onUpdate: (id: string, text: string) => void;
 }) {
   const [input, setInput] = useState("");
@@ -38,6 +40,7 @@ export default function QuestPanel({
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [showReserve, setShowReserve] = useState(false);
+  const [showDone, setShowDone] = useState(false);
   const active = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
   const hidden = active.length - VISIBLE;
@@ -177,29 +180,36 @@ export default function QuestPanel({
           <div className="font-pixel text-[6px] opacity-50 text-center">◀ FOND DE PILE · GLISSER ☰ POUR RÉORDONNER · QUÊTE FAITE ▶ · TOUCHER POUR ÉDITER</div>
 
           {done.length > 0 && (
-            <>
-              <div className="flex items-center justify-between mt-1">
-                <div className="font-pixel text-[8px] opacity-70">TROPHÉES ({done.length})</div>
+            <div className="mt-1 pt-2 border-t border-[#2a4a2a]">
+              <div className="flex items-center justify-between">
+                <button
+                  className="btn-pixel ghost !py-1.5 !px-2 font-pixel text-[7px] flex items-center gap-1.5"
+                  onClick={() => setShowDone((s) => !s)}
+                >
+                  <IconChevronDown size={14} className={`transition-transform ${showDone ? "rotate-180" : ""}`} />
+                  TROPHÉES ({done.length})
+                </button>
                 <button className="btn-pixel danger !py-1.5 !px-2 text-[8px] flex items-center gap-1" disabled={busy} onClick={onPurge}>
                   <IconSkull size={14} /> Purger
                 </button>
               </div>
-              <div className="flex flex-col gap-1.5 opacity-50">
-                {done.map((t) => (
-                  <div key={t.id} className="flex items-center gap-2 bg-[var(--shadow)] p-2 border border-[#3a5a2a] text-base">
-                    <div className="flex-1 min-w-0 line-through">{t.text}</div>
-                    <button
-                      className="shrink-0 opacity-70 hover:opacity-100"
-                      disabled={busy}
-                      title="Remettre dans la pile"
-                      onClick={() => onUndone(t.id)}
-                    >
-                      <IconArrowBackUp size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </>
+              {showDone && (
+                <div className="flex flex-col gap-1.5 opacity-50 mt-1.5">
+                  {done.map((t) => (
+                    <ItemRow
+                      key={t.id}
+                      item={t}
+                      strike
+                      doneLabel="⇡ EN HAUT DE PILE"
+                      bottomLabel="☠ PURGER"
+                      onDone={() => onUndone(t.id)}
+                      onBottom={() => onPurgeOne(t.id)}
+                      onEdit={(text) => onUpdate(t.id, text)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           </>
         )}

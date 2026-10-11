@@ -323,6 +323,19 @@ export default function Game() {
       },
     });
 
+  const questPurgeOne = (id: string) => {
+    const t = tasks.find((x) => x.id === id);
+    if (!t) return;
+    setConfirm({
+      label: `Purger « ${t.text.slice(0, 60)} » ?`,
+      run: () => {
+        setTasks((ts) => ts.filter((x) => x.id !== id));
+        mutate({ url: `/api/tasks?id=${encodeURIComponent(id)}`, init: { method: "DELETE" } });
+        say("Trophée purgé", IconSkull);
+      },
+    });
+  };
+
   function noteAdd(body: string) {
     const t = body.trim();
     if (!t) return;
@@ -656,6 +669,7 @@ export default function Game() {
           onBottom={questBottom}
           onReorder={questReorder}
           onPurge={questPurge}
+          onPurgeOne={questPurgeOne}
           onUpdate={questUpdate}
         />
       </div>
