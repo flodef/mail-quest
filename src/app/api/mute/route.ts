@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { addMuted, dbReady, removeMuted } from "@/lib/db";
 import { invalidateMail } from "@/lib/cache";
 import { internalError, parseJson } from "@/lib/api";
+import { isKnownAccount } from "@/lib/mail/accounts";
 
 const SENDER_MAX = 254;
 
@@ -9,7 +10,7 @@ function parse(req: Request): Promise<{ account: string; sender: string } | null
   return parseJson(req).then((body) => {
     const account = typeof body?.account === "string" ? body.account : "";
     const sender = typeof body?.sender === "string" ? body.sender : "";
-    if (!account || !sender || sender.length > SENDER_MAX) return null;
+    if (!isKnownAccount(account) || !sender || sender.length > SENDER_MAX) return null;
     return { account, sender };
   });
 }

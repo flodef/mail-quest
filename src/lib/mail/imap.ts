@@ -1,8 +1,12 @@
-import { ImapFlow } from "imapflow";
+import { ImapFlow, type MessageStructureObject } from "imapflow";
 import { simpleParser, type AddressObject, type ParsedMail } from "mailparser";
 import sanitizeHtml from "sanitize-html";
 import MailComposer from "nodemailer/lib/mail-composer";
+import { Libmime } from "libmime";
 import type { MailAccount } from "./accounts";
+
+// Noms de fichiers PJ encodés =?utf-8?...?=.
+const mime = new Libmime();
 
 export interface DraftSummary {
   account: string;
@@ -203,18 +207,60 @@ const SANITIZE_NO_IMG: sanitizeHtml.IOptions = {
 export const sanitizeBody = (html: string | false | undefined, images: boolean): string | null =>
   typeof html === "string" && html ? sanitizeHtml(html, images ? SANITIZE_BASE : SANITIZE_NO_IMG) : null;
 
-// Part MIME feuille = pièce jointe si disposition "attachment" ou un filename est porté.
-function withAttachment(node: unknown): boolean {
-  if (!node || typeof node !== "object") return false;
-  const n = node as {
-    disposition?: string;
-    dispositionParameters?: { filename?: string };
-    parameters?: { name?: string };
-    childNodes?: unknown[];
-  };
-  if (n.disposition === "attachment" || n.dispositionParameters?.filename) return true;
-  return (n.childNodes ?? []).some(withAttachment);
+// Texte brut dérivé du HTML SANITIZÉ (pas de part text/plain — mailparser
+// faisait la même chose via htmlToText) : contexte IA + preview des mails
+// html-only. Les fermetures de blocs deviennent des sauts de ligne avant le
+// strip total des tags.
+export function htmlToPlain(html: string): string {
+  const withBreaks = html.replace(/<\s*(br|\/p|\/div|\/li|\/tr|\/td|\/h[1-6]|\/table|\/blockquote)\b[^>]*>/gi, "\n");
+  return sanitizeHtml(withBreaks, { allowedTags: [], allowedAttributes: {} })
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&amp;/g, "&") // en dernier : "&amp;lt;" doit rester "&lt;"
+    .replace(/[ \t\u00A0]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
+
+// Nœuds feuilles de la BODYSTRUCTURE (message/rfc822 = blob attaché entier).
+function* leafNodes(node: MessageStructureObject | undefined): Generator<MessageStructureObject> {
+  if (!node) return;
+  if (node.childNodes?.length && node.type !== "message/rfc822") {
+    for (const c of node.childNodes) yield* leafNodes(c);
+    return;
+  }
+  yield node;
+}
+
+// PJ si disposition attachment, un filename est porté, un mail encapsulé —
+// ou `name=` sur une part NON-texte (vieux clients : Content-Type: pdf;
+// name="doc.pdf" sans Content-Disposition). name= sur text/* reste du texte.
+const isAttachmentNode = (n: MessageStructureObject) =>
+  n.disposition === "attachment" ||
+  Boolean(n.dispositionParameters?.filename) ||
+  n.type === "message/rfc822" ||
+  Boolean(n.parameters?.name && !n.type.startsWith("text/"));
+
+// Liste des PJ d'une structure — inclut le corps entier quand le mail est
+// mono-part non-texte (scanner/fax : body = pdf/image sans name= ni
+// disposition). Partagé entre meta et téléchargement → index cohérents.
+function attachmentNodes(root: MessageStructureObject | undefined): MessageStructureObject[] {
+  const leaves = [...leafNodes(root)];
+  return leaves.filter((n) => isAttachmentNode(n) || (leaves.length === 1 && !n.type.startsWith("text/")));
+}
+
+const decodeFilename = (v: string | undefined, fallback: string) => {
+  if (!v) return fallback;
+  try {
+    return mime.decodeWords(v) || fallback;
+  } catch {
+    return v;
+  }
+};
 
 // --- Drafts ---
 
@@ -259,40 +305,96 @@ export async function listDrafts(acc: MailAccount): Promise<DraftSummary[]> {
 }
 
 async function downloadRaw(client: ImapFlow, uid: number): Promise<Buffer | null> {
-  const raw = await client.download(String(uid), undefined, { uid: true });
+  const raw = await client.download(String(uid), undefined, { uid: true, maxBytes: 60_000_000 });
   if (!raw?.content) return null;
-  return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    raw.content!.on("data", (c: Buffer) => chunks.push(c));
-    raw.content!.on("end", () => resolve(Buffer.concat(chunks)));
-    raw.content!.on("error", reject);
-  });
+  return streamToBuffer(raw.content);
 }
 
-/** Parse complet d'un raw MIME → InboxFull/DraftFull (sans account/uid). */
-function parseFull(parsed: ParsedMail) {
-  const replyTo = addrList(parsed.replyTo);
+interface ParsedParts {
+  from: string;
+  fromEmail: string;
+  to: string;
+  cc: string;
+  replyTo?: string;
+  replyToEmail?: string;
+  messageId?: string;
+  subject: string;
+  date: string | null;
+  preview: string;
+  html: string | null;
+  htmlNoImg: string | null;
+  text: string | null;
+  attachments: AttachmentMeta[];
+  ai?: boolean;
+}
+
+// Contenu d'une part MIME : client.download décode le transfer-encoding ET
+// convertit le texte en UTF-8 côté ImapFlow.
+// Collecte d'un stream en Buffer — utilisé par partText, downloadRaw et
+// getAttachment (3 fois le même collecteur avant).
+const streamToBuffer = (stream: NodeJS.ReadableStream): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on("data", (c: Buffer) => chunks.push(c));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
+
+async function partText(client: ImapFlow, uid: number, part: string | undefined): Promise<string | null> {
+  if (!part) return null;
+  const dl = await client.download(String(uid), part, { uid: true, maxBytes: 10_000_000 });
+  if (!dl?.content) return null;
+  return (await streamToBuffer(dl.content)).toString("utf8");
+}
+
+/**
+ * Parse sélectif : en-têtes + BODYSTRUCTURE d'abord, puis UNIQUEMENT les
+ * parts text/plain et text/html — les pièces jointes ne sont jamais
+ * téléchargées (leurs métadonnées viennent de la structure). Un mail de
+ * 25 Mo n'explose plus la mémoire.
+ */
+async function fetchParsed(client: ImapFlow, uid: number): Promise<ParsedParts | null> {
+  const msg = await client.fetchOne(String(uid), { headers: true, bodyStructure: true }, { uid: true });
+  if (!msg || !msg.headers) return null;
+  const head: ParsedMail = await simpleParser(msg.headers);
+  const leaves = [...leafNodes(msg.bodyStructure)];
+  const textNodes = leaves.filter((n) => n.type === "text/plain" && !isAttachmentNode(n));
+  const htmlNodes = leaves.filter((n) => n.type === "text/html" && !isAttachmentNode(n));
+  // Nœud trouvé mais sans numéro de part (racine mono-part) → "1".
+  // AUCUN nœud → on ne télécharge pas "1" (ce serait du HTML brut ou du
+  // binaire dans `text`/`preview`).
+  // Toutes les parts texte sont concaténées (parity mailparser — un
+  // multipart/mixed peut avoir plusieurs segments texte inline).
+  const textParts = (await Promise.all(textNodes.map((n) => partText(client, uid, n.part ?? "1")))).filter((t): t is string => t !== null);
+  const htmlParts = (await Promise.all(htmlNodes.map((n) => partText(client, uid, n.part ?? "1")))).filter((t): t is string => t !== null);
+  const rawText = textParts.length ? textParts.join("\n") : null;
+  const htmlRaw = htmlParts.length ? htmlParts.join("\n") : null;
+  const html = htmlRaw !== null ? sanitizeBody(htmlRaw, true) : null;
+  // Pas de part text/plain → texte dérivé du HTML sanitizé (parity mailparser).
+  const text = rawText ?? (html ? htmlToPlain(html) : null);
+  const replyTo = addrList(head.replyTo);
   return {
-    from: addrDisplay(parsed.from) || (parsed.from?.text ?? ""),
-    fromEmail: firstAddr(parsed.from),
-    to: addrDisplay(parsed.to),
-    cc: addrDisplay(parsed.cc),
-    replyTo: addrDisplay(parsed.replyTo) || undefined,
+    from: addrDisplay(head.from) || (head.from?.text ?? ""),
+    fromEmail: firstAddr(head.from),
+    to: addrDisplay(head.to),
+    cc: addrDisplay(head.cc),
+    replyTo: addrDisplay(head.replyTo) || undefined,
     replyToEmail: replyTo[0]?.email.toLowerCase() || undefined,
-    messageId: parsed.messageId || undefined,
-    subject: parsed.subject ?? "(sans sujet)",
-    date: iso(parsed.date),
-    preview: (parsed.text ?? "").replace(/\s+/g, " ").slice(0, 140),
-    html: sanitizeBody(parsed.html, true),
-    htmlNoImg: sanitizeBody(parsed.html, false),
-    text: parsed.text ?? null,
-    attachments: (parsed.attachments ?? []).map((a, index) => ({
+    messageId: head.messageId || undefined,
+    subject: head.subject ?? "(sans sujet)",
+    date: iso(head.date),
+    preview: (text ?? "").replace(/\s+/g, " ").slice(0, 140),
+    html,
+    htmlNoImg: sanitizeBody(htmlRaw ?? false, false),
+    text,
+    attachments: attachmentNodes(msg.bodyStructure).map((n, index) => ({
       index,
-      filename: a.filename ?? `piece-jointe-${index + 1}`,
-      contentType: a.contentType ?? "application/octet-stream",
-      size: a.size ?? 0,
+      filename: decodeFilename(n.dispositionParameters?.filename ?? n.parameters?.name, `piece-jointe-${index + 1}`),
+      contentType: n.type ?? "application/octet-stream",
+      // n.size = octets encodés (BODYSTRUCTURE) — estimation décodée pour base64.
+      size: n.encoding === "base64" ? Math.floor((n.size ?? 0) * 0.75) : n.size ?? 0,
     })),
-    ai: hasAiMark(parsed.headers) || undefined,
+    ai: hasAiMark(head.headers) || undefined,
   };
 }
 
@@ -302,10 +404,8 @@ export async function getDraft(acc: MailAccount, uid: number): Promise<DraftFull
     const box = await draftsMailbox(client);
     const lock = await client.getMailboxLock(box);
     try {
-      const buf = await downloadRaw(client, uid);
-      if (!buf) return null;
-      const parsed: ParsedMail = await simpleParser(buf);
-      const f = parseFull(parsed);
+      const f = await fetchParsed(client, uid);
+      if (!f) return null;
       return {
         account: acc.id,
         mailbox: box,
@@ -320,6 +420,44 @@ export async function getDraft(acc: MailAccount, uid: number): Promise<DraftFull
         text: f.text,
         ai: f.ai,
       };
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+/**
+ * Brouillon BRUT tel que stocké (MIME complet, PJ incluses) + destinataires
+ * de l'enveloppe. Utilisé par sendDraft : on envoie exactement ce que le
+ * brouillon contient — jamais le HTML sanitizé de l'aperçu.
+ */
+export async function getDraftRaw(
+  acc: MailAccount,
+  uid: number,
+): Promise<{ raw: Buffer; envelopeTo: string[]; to: string; subject: string } | null> {
+  return withClient(acc, async (client) => {
+    const box = await draftsMailbox(client);
+    const lock = await client.getMailboxLock(box);
+    try {
+      const meta = await client.fetchOne(String(uid), { envelope: true, headers: true }, { uid: true });
+      if (!meta) return null;
+      const raw = await downloadRaw(client, uid);
+      if (!raw) return null;
+      // Brouillon > cap : un MIME tronqué part aux destinataires si on
+      // l'envoie — refuser plutôt que corrompre (le passe-plat s'arrête
+      // pile à maxBytes).
+      if (raw.length >= 60_000_000) throw new Error("brouillon trop volumineux pour l'envoi");
+      const env = meta.envelope;
+      const head: ParsedMail = await simpleParser(meta.headers ?? Buffer.alloc(0));
+      // Adresses filtrées — une enveloppe malformée ne casse pas la session
+      // SMTP. Local-parts quotés ("foo bar"@x.fr) acceptés ; si l'enveloppe
+      // est entièrement invalide, repli sur les en-têtes parsés.
+      const envAddrs = [...(env?.to ?? []), ...(env?.cc ?? []), ...(env?.bcc ?? [])].map((a) => (a.address ?? "").trim());
+      const headAddrs = [...addrList(head.to), ...addrList(head.cc), ...addrList(head.bcc)].map((a) => a.email);
+      const valid = (a: string) => EMAIL_RE.test(a) || /^"[^"\r\n]+"@[^\s@<>]+\.[^\s@<>]+$/.test(a);
+      const envFiltered = envAddrs.filter(valid);
+      const envelopeTo = envFiltered.length ? envFiltered : headAddrs.filter(valid);
+      return { raw, envelopeTo, to: addrDisplay(head.to), subject: head.subject ?? "(sans sujet)" };
     } finally {
       lock.release();
     }
@@ -352,7 +490,7 @@ interface EnvelopeMsg {
   uid: number;
   envelope?: { from?: { address?: string; name?: string }[]; subject?: string; date?: Date | string };
   flags?: Set<string>;
-  bodyStructure?: unknown;
+  bodyStructure?: MessageStructureObject;
 }
 
 function envToItem(acc: MailAccount, msg: EnvelopeMsg): InboxItem {
@@ -365,7 +503,7 @@ function envToItem(acc: MailAccount, msg: EnvelopeMsg): InboxItem {
     subject: env?.subject ?? "(sans sujet)",
     date: iso(env?.date),
     unread: !(msg.flags?.has("\\Seen") ?? false),
-    hasAttachment: withAttachment(msg.bodyStructure),
+    hasAttachment: [...leafNodes(msg.bodyStructure)].some(isAttachmentNode),
   };
 }
 
@@ -436,10 +574,8 @@ export async function getMessage(acc: MailAccount, uid: number): Promise<InboxFu
   return withClient(acc, async (client) => {
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const buf = await downloadRaw(client, uid);
-      if (!buf) return null;
-      const parsed: ParsedMail = await simpleParser(buf);
-      const f = parseFull(parsed);
+      const f = await fetchParsed(client, uid);
+      if (!f) return null;
       return {
         account: acc.id,
         uid,
@@ -469,19 +605,30 @@ export async function getAttachment(
   acc: MailAccount,
   uid: number,
   index: number,
-): Promise<{ filename: string; contentType: string; content: Buffer } | null> {
+): Promise<{ filename: string; contentType: string; content: Buffer; truncated?: boolean } | null> {
   return withClient(acc, async (client) => {
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const buf = await downloadRaw(client, uid);
-      if (!buf) return null;
-      const parsed: ParsedMail = await simpleParser(buf);
-      const att = parsed.attachments?.[index];
-      if (!att) return null;
+      const msg = await client.fetchOne(String(uid), { bodyStructure: true }, { uid: true });
+      if (!msg) return null;
+      const node = attachmentNodes(msg.bodyStructure)[index];
+      if (!node) return null;
+      // Nœud racine sans numéro (mail entier déclaré attachment) → "1".
+      // Cap mémoire : une PJ géante est tronquée plutôt que bufferisée.
+      // maxBytes = cap+1 : « reçu > cap » prouve la troncation.
+      const dl = await client.download(String(uid), node.part ?? "1", { uid: true, maxBytes: 30_000_001 });
+      if (!dl?.content) return null;
+      const content = await streamToBuffer(dl.content);
+      // Tronquée seulement si on a atteint le cap maxBytes (le passe-plat
+      // s'arrête pile dessus). expectedSize ≠ utilisable : c'est la taille
+      // du message ENTIER (RFC822.SIZE), pas de la part.
+      const truncated = content.length > 30_000_000;
       return {
-        filename: att.filename ?? `piece-jointe-${index + 1}`,
-        contentType: att.contentType ?? "application/octet-stream",
-        content: att.content,
+        // dl.meta.filename est déjà décodé par ImapFlow — priorité.
+        filename: dl.meta?.filename || decodeFilename(node.dispositionParameters?.filename ?? node.parameters?.name, `piece-jointe-${index + 1}`),
+        contentType: node.type ?? "application/octet-stream",
+        content,
+        truncated,
       };
     } finally {
       lock.release();
@@ -610,10 +757,8 @@ export async function findOriginalMessage(acc: MailAccount, toAddr: string, subj
         for (const e of envs) if (stripRe(e.subject) === want) bestUid = e.uid;
       }
       if (bestUid === null) return null;
-      const buf = await downloadRaw(client, bestUid);
-      if (!buf) return null;
-      const parsed: ParsedMail = await simpleParser(buf);
-      const f = parseFull(parsed);
+      const f = await fetchParsed(client, bestUid);
+      if (!f) return null;
       return {
         account: acc.id,
         uid: bestUid,
@@ -711,7 +856,7 @@ export async function createReplyDraft(
   const re = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
   const msgId = opts.inReplyTo ? cleanHeaderValue(opts.inReplyTo) : undefined;
   const mail = new MailComposer({
-    from: acc.smtp.from ?? acc.smtp.user,
+    from: acc.smtp.from,
     to,
     subject: re,
     text: opts.body,

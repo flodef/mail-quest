@@ -21,7 +21,7 @@ bun dev
 | Variable | Rôle | Requis |
 |---|---|---|
 | `MAIL_PASSCODE` | Code d'accès de l'app (écran de login) | oui |
-| `MAIL_ACCOUNTS` | JSON des boîtes IMAP/SMTP (voir `.env.example`) | oui |
+| `MAIL_ACCOUNTS` | JSON des boîtes IMAP/SMTP (voir `.env.example`) — `"manual": true` sur un compte = jamais de polling (cron + overview l'ignorent), relevé uniquement à l'ouverture de la boîte | oui |
 | `DATABASE_URL` | Neon Postgres (quêtes, notes, agenda, sessions, push, mutes) | oui |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push (`bunx web-push generate-vapid-keys`) | oui |
 | `VAPID_SUBJECT` | Contact `mailto:` déclaré aux services push | oui |

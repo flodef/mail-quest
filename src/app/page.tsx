@@ -23,6 +23,7 @@ import { parseNoteItems } from "@/lib/items";
 export default function Game() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<OverviewAccount[]>([]);
+  const [pollingId, setPollingId] = useState<string | null>(null);
   const [pile, setPile] = useState<Draft[]>([]);
   const [aside, setAside] = useState<Draft[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -52,17 +53,47 @@ export default function Game() {
   useAppBadge(pile.length);
 
   const applySnapshot = useCallback((s: Snapshot) => {
-    setAccounts(s.accounts ?? []);
+    // Comptes à relevé manuel : leurs données ne viennent pas du snapshot
+    // global (overview les saute) — on conserve les piles/tiroirs déjà
+    // relevés à la demande.
+    const manualIds = new Set((s.accounts ?? []).filter((a) => a.manual).map((a) => a.id));
+    setAccounts((prev) =>
+      (s.accounts ?? []).map((a) => {
+        const old = prev.find((o) => o.id === a.id);
+        return a.manual && old?.latest !== undefined
+          ? { ...a, latest: old.latest, unseen: old.unseen, draftCount: old.draftCount, asideCount: old.asideCount }
+          : a;
+      }),
+    );
     setMuted(s.muted ?? []);
-    setPile(s.pile ?? []);
-    setAside(s.aside ?? []);
+    setPile((prev) => [...prev.filter((d) => manualIds.has(d.account)), ...(s.pile ?? [])]);
+    setAside((prev) => [...prev.filter((d) => manualIds.has(d.account)), ...(s.aside ?? [])]);
     setTasks(s.tasks ?? []);
     setNotes(s.notes ?? []);
     setAgenda(s.agenda ?? []);
     setInboxOrder(s.inboxOrder ?? {});
   }, []);
 
-  const { mutate, refresh, pending, offline, loading } = useOfflineSync(applySnapshot);
+  const onAuthLost = useCallback(() => router.replace("/login"), [router]);
+  const { mutate, refresh, pending, offline, loading } = useOfflineSync(applySnapshot, onAuthLost);
+
+  // Relevé manuel d'un compte "manual" (exclu du cron + overview) :
+  // déclenché uniquement quand l'utilisateur ouvre la boîte.
+  const pollAccount = useCallback(async (id: string) => {
+    setPollingId(id);
+    try {
+      const res = await fetch(`/api/account?account=${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(await apiError(res));
+      const acc = (await res.json()) as OverviewAccount & { active?: Draft[]; aside?: Draft[] };
+      setAccounts((prev) => prev.map((a) => (a.id === id ? acc : a)));
+      setPile((prev) => [...prev.filter((d) => d.account !== id), ...(acc.active ?? [])]);
+      setAside((prev) => [...prev.filter((d) => d.account !== id), ...(acc.aside ?? [])]);
+    } catch (e) {
+      say(e instanceof Error ? e.message : "relevé impossible", IconSkull);
+    } finally {
+      setPollingId(null);
+    }
+  }, [say]);
 
   const json = (body: Record<string, unknown>): RequestInit => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const patch = (body: Record<string, unknown>): RequestInit => ({ ...json(body), method: "PATCH" });
@@ -210,6 +241,7 @@ export default function Game() {
       await refresh();
     } catch (e) {
       say(e instanceof Error ? e.message : "Erreur", IconSkull);
+      await refresh(); // restaure la jarre vidée optimistement
     } finally {
       setBusy(null);
     }
@@ -547,7 +579,11 @@ export default function Game() {
         </div>
       </header>
 
-      <Hud accounts={accounts} onAccountTap={(id) => { setInboxOf(id); setTrash(null); }} />
+      <Hud accounts={accounts} onAccountTap={(id) => {
+        setInboxOf(id);
+        setTrash(null);
+        if (accounts.find((a) => a.id === id)?.manual) void pollAccount(id);
+      }} />
 
       <div className="flex items-center justify-between">
         <div className="font-pixel text-[9px] opacity-80">MISSIVES À EXPÉDIER : {pile.length}</div>
@@ -687,6 +723,7 @@ export default function Game() {
         <InboxDrawer
           inbox={inbox}
           items={orderedInbox(inbox)}
+          polling={pollingId === inbox.id}
           muted={muted}
           trash={trash}
           busy={!!busy}

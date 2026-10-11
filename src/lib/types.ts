@@ -59,10 +59,16 @@ export interface AccountBadge {
   draftCount?: number;
   asideCount?: number;
   error?: string;
+  /** Compte à relevé manuel — pas de polling, chargé via /api/account au tap. */
+  manual?: boolean;
 }
 
 export interface OverviewAccount extends AccountBadge {
   latest?: InboxItem[];
+  /** Quêtes actives (brouillons non mis de côté) — aplaties en `pile`. */
+  active?: Draft[];
+  /** Brouillons rangés dans la jarre. */
+  aside?: Draft[];
 }
 
 export interface MutedEntry {

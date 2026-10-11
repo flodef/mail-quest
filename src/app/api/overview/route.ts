@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { getAccounts } from "@/lib/mail/accounts";
-import { fetchAccount } from "@/lib/mail/imap";
+import { accountView, manualView } from "@/lib/mail/accountView";
 import { dbReady, listAsides, listMuted } from "@/lib/db";
 import { cachedMail } from "@/lib/cache";
 import { checkReminders } from "@/lib/reminders";
@@ -17,26 +17,10 @@ export async function GET() {
     const [asideRows, mutedRows] = dbReady()
       ? await Promise.all([listAsides().catch(() => []), listMuted().catch(() => [])])
       : [[], []];
-    const asides = new Set(asideRows.map((a) => `${a.account}:${a.uid}`));
-    const muted = new Set(mutedRows.map((m) => `${m.account}:${m.sender}`));
-    const mutedFor = (id: string) => mutedRows.filter((m) => m.account === id).map((m) => m.sender);
     const results = await Promise.allSettled(
-      accounts.map(async (acc) => {
-        const { stats, drafts } = await fetchAccount(acc, mutedFor(acc.id));
-        const latest = stats.latest.filter((m) => !muted.has(`${acc.id}:${m.fromEmail}`));
-        const active = drafts.filter((d) => !asides.has(`${acc.id}:${d.uid}`));
-        return {
-          id: acc.id,
-          label: acc.label,
-          color: acc.color,
-          unseen: Math.max(0, stats.unseen - stats.mutedUnseen),
-          draftCount: active.length,
-          asideCount: drafts.length - active.length,
-          latest,
-          active,
-          aside: drafts.filter((d) => asides.has(`${acc.id}:${d.uid}`)),
-        };
-      }),
+      // manual: true → badge sans relevé IMAP (le compte ne se charge que
+      // via /api/account quand l'utilisateur ouvre sa boîte).
+      accounts.map((acc) => (acc.manual ? Promise.resolve(manualView(acc)) : accountView(acc, asideRows, mutedRows))),
     );
     return {
       accounts: results.map((r, i) =>

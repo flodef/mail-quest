@@ -24,6 +24,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Jamais de cache CDN/proxy sur les réponses API (données de mail).
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store" }],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "Content-Security-Policy", value: CSP },

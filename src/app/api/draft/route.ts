@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccount } from "@/lib/mail/accounts";
+import { getAccount, isKnownAccount } from "@/lib/mail/accounts";
 import { getDraft } from "@/lib/mail/imap";
 import { internalError, isUid } from "@/lib/api";
 
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const account = url.searchParams.get("account") ?? "";
   const uidRaw = url.searchParams.get("uid");
   const uid = uidRaw === null ? NaN : Number(uidRaw);
-  if (!account || !isUid(uid)) {
+  if (!isKnownAccount(account) || !isUid(uid)) {
     return NextResponse.json({ error: "account, uid required" }, { status: 400 });
   }
   try {

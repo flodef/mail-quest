@@ -1,7 +1,14 @@
-const SHELL_CACHE = "mq-shell-v1";
+const SHELL_CACHE = "mq-shell-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil(clients.claim()));
+self.addEventListener("activate", (e) =>
+  e.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL_CACHE).map((k) => caches.delete(k))))
+      .then(() => clients.claim()),
+  ),
+);
 
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : {};

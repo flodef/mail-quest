@@ -84,3 +84,89 @@ Suivi de l'audit complet (voir détail dans la session). Légende : ⬜ à faire
 - ✅ R21 `/api/draft/improve` : `moved:false` remonté si l'original n'a pas pu être rangé (pas de 500 qui pousserait à retenter en doublon).
 - ✅ R22 `ai` propagé sur getMessage/findOriginalMessage (+attachments sur findOriginalMessage).
 - ✅ Vérif : tsc + eslint + 31 vitest + build — tout vert.
+
+## Étape 8 — Audit #2 : plan d'implémentation
+### A — Pertes de données (urgent)
+- ✅ B1+B2 sendDraft envoie le MIME BRUT du brouillon (`envelope` + `raw` nodemailer) — HTML original, PJ et en-têtes préservés. Bonus découvert : l'en-tête Bcc est retiré avant envoi (sinon exposé aux destinataires) + test.
+- ✅ B3 flushOps : 401/403 → ops conservées + `onAuthLost` → redirect /login (re-login rejoue la file). refresh() détecte aussi 401 (plus de faux « hors-ligne »).
+- ✅ B4 doClearJar : refresh() en catch.
+- ✅ B5 Login : inputMode="numeric" retiré.
+### B — Durcissement
+- ✅ M1 Timeouts SMTP : connection 20s / greeting 15s / socket 25s.
+- ✅ M2 Cache-Control: private,no-store sur /api/* (next.config).
+- ✅ M3 /api/cron : events génériques, détails en console.error.
+- ✅ M5 isKnownAccount() appliqué à aside, mute, inbox-order.
+- ✅ M6 fetchParsed : headers+bodyStructure puis UNIQUEMENT les parts texte (ImapFlow décode CTE+UTF-8) ; PJ = métadonnées ; getAttachment télécharge la part directement. Testé en réel sur fims/tradiz/jobconciergerie.
+- ✅ M7 Rate-limit : IPv6 bucketé par /64 + cap ip 64.
+- ✅ M8 Entrées Gemini déjà cappées (6000/4000/3000).
+### C — Polissage
+- ✅ passcode cap 256.
+- ✅ .env.example : GEMINI_API_KEY, GEMINI_MODEL, BOT_API_TOKEN.
+- ✅ sw.js : bump mq-shell-v2 (cache unique) + purge des vieux caches à l'activate.
+- ✅ InboxRow : fmtDate remplacé par lib/dates fmtShort.
+- ✅ vitest.config.ts → .mts.
+- ✅ Snapshot : v:2, mismatch ignoré.
+- ✅ Vérif : tsc + eslint + 32 vitest + build verts ; smoke-test IMAP réel OK.
+### Décisions documentées
+- M4 (DB down → /login partout) : fail-closed maintenu — PWA offline compense.
+- `html` (images affichées) garde `style` : consentement utilisateur explicite.
+- `free` : credentials refusés au login (NO Invalid login or password) — préexistant, à vérifier à la rotation.
+
+## Étape 9 — Retour de review (4e passe)
+- ✅ R23 IPv6 /64 : `ipv6Prefix64` — expansion `::` AVANT extraction des 4 hextets + normalisation hex (0db8=db8) + IPv4-mapped → IPv4. 7 tests (compression, normalisation, mapped, /64 distincts).
+- ✅ R24 fetchParsed : le fallback "1" ne s'applique qu'à un nœud EXISTANT sans numéro — plus de HTML/binaire dans `text`/`preview`, plus de double téléchargement.
+- ✅ R25 getAttachment : nœud racine sans part (mail entier attachment) → fallback "1" — plus de PJ listée mais intéléchargeable.
+- ✅ R26 libmime en dep directe (5.4.6) + `src/lib/libmime.d.ts` — plus de createRequire sur dep transitive.
+- ✅ R27 Limite `parameters.name` sans disposition documentée dans isAttachmentNode.
+- ✅ R28 stripOutboundHeaders : Bcc + DKIM-Signature (signature obsolète après modif → spam) ; test déplacé vers smtp.test.ts.
+- ✅ R29 refresh() : check 401/403 sur les 5 endpoints.
+- ✅ R30 sw.js : purge `caches.keys()` ≠ SHELL_CACHE à l'activate.
+- ✅ R31 vitest.config.mts : `import.meta.dirname`.
+- ✅ getAttachment : `dl.meta.filename` (décodé ImapFlow) prioritaire.
+- ✅ Vérif : tsc + eslint + 34 vitest + build verts.
+
+## Étape 10 — Retour de review (5e passe)
+- ✅ R32 `htmlToPlain` : mails html-only → texte dérivé du HTML sanitizé (tags strippés, blocs → \n, entités décodées incl. U+00A0, `&amp;` en dernier). Restaure `text`/`preview`/contexte IA — parity avec mailparser. 2 tests.
+- ✅ R33 `stripOutboundHeaders` : scan des lignes d'en-tête même SANS séparateur corps (une ligne non-header clôt la zone) + LF-only + Resent-Bcc ajouté. 2 tests.
+- ✅ R34 `envelopeTo` filtré par EMAIL_RE (enveloppe malformée → erreur propre).
+- ✅ R35 `isKnownAccount` cohérent sur draft, send, trash, message, generate, improve (400 au lieu de 500).
+- ✅ R36 `sendDraft.to` : joint tous les destinataires si `To:` vide (brouillons Cc/Bcc-only — toast correct).
+- ✅ R37 `streamToBuffer` mutualisé (partText, downloadRaw, getAttachment) + `maxBytes` 30 Mo sur les PJ.
+- ✅ Vérif : tsc + eslint + 37 vitest + build verts.
+
+## Étape 11 — Retour de review (6e passe)
+- ✅ R38 STRIP_HEADERS += `X-Mail-Quest` (le marqueur IA interne ne part plus aux destinataires) + `Received:`/`Return-Path:` (un mail reçu déplacé en brouillon ne fuiterait plus la chaîne serveur).
+- ✅ R39 stripOutboundHeaders : la ligne vide clôt la zone d'en-têtes — plus de suppression silencieuse de lignes de corps ressemblant à des en-têtes.
+- ✅ R40 getAttachment : `truncated` remonté (expectedSize vs reçu) → 413 "pièce jointe trop volumineuse" au lieu d'un fichier corrompu.
+- ✅ R41 Attachment `size` : estimation décodée (~0.75×) pour les parts base64 (BODYSTRUCTURE donne les octets encodés).
+- ✅ R42 envelopeTo : local-parts quotés (`"foo bar"@x.fr`) acceptés + repli sur les en-têtes To/Cc/Bcc parsés si l'enveloppe est entièrement invalide.
+- ✅ R43 fetchParsed concatène TOUTES les parts text/plain + html non-PJ (parity mailparser sur multipart/mixed).
+- ✅ R44 flushOps testé : 401 conserve+authLost, 5xx/réseau conserve, 4xx jette, ordre préservé (offline.test.ts).
+- ✅ R45 Fallback `acc.smtp.from ?? user` retiré (from requis).
+- ✅ Vérif : tsc + eslint + 41 vitest + build verts.
+
+## Étape 12 — Retour de review (7e passe)
+- ✅ R46 `truncated` cassait TOUTES les PJ : `dl.meta.expectedSize` = taille du message ENTIER (RFC822.SIZE), pas de la part → toujours "tronqué" → 413 partout. Fix : `content.length >= 30 Mo` (le passe-plat s'arrête pile au cap). Vérifié en réel : PDF 238 Ko télécharge OK.
+- ✅ R43 RÉELLEMENT implémenté : fetchParsed concatène toutes les parts text/plain + html non-PJ (Promise.all + join) — la 1re tentative n'avait pas atterri.
+- ✅ R47 isAttachmentNode : `name=` sur parts NON-texte compte comme PJ (vieux clients `Content-Type: pdf; name="x"`), name= sur text/* reste du texte.
+- ✅ R48 createReplyDraft : fallback `?? acc.smtp.user` retiré aussi (from requis partout).
+- ✅ R49 envelopeTo : chaque liste filtrée PUIS choix — repli sur les en-têtes si TOUTES les adresses d'enveloppe sont invalides (pas seulement liste vide).
+- ✅ R50 partText cap 10 Mo / downloadRaw cap 60 Mo (mémoire bornée).
+- ✅ Vérif : tsc + eslint + 41 vitest + build verts + test réel PJ sur fims.
+
+## Étape 13 — Retour de review (8e passe)
+- ✅ R51 getDraftRaw : brouillon > 60 Mo tronqué par maxBytes → MIME malformé envoyé. Désormais `throw` "brouillon trop volumineux" — jamais de courrier corrompu (getAttachment avait son flag, le chemin raw l'avait oublié).
+- ✅ R52 Racine mono-part non-texte (scanner/fax : corps = pdf/image sans name=/disposition) → `attachmentNodes` partagé inclut la racine → PJ listée ET téléchargeable (avant : "(vide)" sans accès au contenu).
+- ✅ R53 loadSnapshot : `{v:2}` sans `data` → null (plus d'`applySnapshot(undefined)`).
+- ✅ R54 `?part=abc` → 400 explicite (était fallback silencieux sur le fetch du message).
+- ✅ R55 ipv6Prefix64 : forme hex `::ffff:0102:0304` → IPv4.
+- ✅ R56 S1 documenté : From/Date/Message-ID du brouillon préservés (redirect assumé, enveloppe correcte).
+- ✅ Vérif : tsc + eslint + 41 vitest + build verts.
+
+## Étape 14 — Relevé manuel (comptes "manual")
+- ✅ `MailAccount.manual` (flag `manual: true` dans MAIL_ACCOUNTS) : le cron et l'overview ignorent le compte — zéro IMAP automatique (anti-blocage free.fr : ses logins depuis IP de datacenter font bloquer le compte comme « compromis »).
+- ✅ `GET /api/account?account=x` : relevé à la demande d'un seul compte.
+- ✅ Tap sur le badge du compte manuel → relevé + merge dans accounts/pile/aside ; refresh global conserve ses données déjà relevées.
+- ✅ HUD : icône ✋ à la place du compteur ; InboxDrawer : états « relevé en cours » / « pas de relevé ».
+- ✅ `manual: true` posé sur `free` dans `.env.local` + Vercel (prod/preview/dev).
+- ✅ `.env.example` + README documentés ; tsc + eslint + 41 vitest + build verts.

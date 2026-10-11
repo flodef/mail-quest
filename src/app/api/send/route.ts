@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccount } from "@/lib/mail/accounts";
+import { getAccount, isKnownAccount } from "@/lib/mail/accounts";
 import { sendDraft } from "@/lib/mail/smtp";
 import { dbReady, removeAside } from "@/lib/db";
 import { invalidateMail } from "@/lib/cache";
@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   const body = await parseJson(req);
   const account = typeof body?.account === "string" ? body.account : "";
   const uid = body?.uid;
-  if (!account || !isUid(uid)) {
+  if (!isKnownAccount(account) || !isUid(uid)) {
     return NextResponse.json({ error: "account, uid required" }, { status: 400 });
   }
   try {

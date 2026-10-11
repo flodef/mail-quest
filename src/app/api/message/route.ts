@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccount } from "@/lib/mail/accounts";
+import { getAccount, isKnownAccount } from "@/lib/mail/accounts";
 import { deleteFromSender, deleteMessage, findOriginalMessage, getAttachment, getMessage } from "@/lib/mail/imap";
 import { invalidateMail } from "@/lib/cache";
 import { internalError, isUid } from "@/lib/api";
@@ -14,10 +14,13 @@ export async function GET(req: Request) {
   const uidRaw = url.searchParams.get("uid");
   const uid = uidRaw === null ? NaN : Number(uidRaw);
   const partRaw = url.searchParams.get("part");
+  if (partRaw !== null && !(Number.isInteger(Number(partRaw)) && Number(partRaw) >= 0)) {
+    return NextResponse.json({ error: "invalid part" }, { status: 400 });
+  }
   const part = partRaw === null ? NaN : Number(partRaw);
   const to = url.searchParams.get("to") ?? "";
   const subject = url.searchParams.get("subject") ?? "";
-  if (!account || (!isUid(uid) && !(to && subject))) {
+  if (!isKnownAccount(account) || (!isUid(uid) && !(to && subject))) {
     return NextResponse.json({ error: "account + (uid or to+subject) required" }, { status: 400 });
   }
   try {
@@ -26,6 +29,7 @@ export async function GET(req: Request) {
       if (!isUid(uid)) return NextResponse.json({ error: "uid required for attachments" }, { status: 400 });
       const att = await getAttachment(acc, uid, part);
       if (!att) return NextResponse.json({ error: "not found" }, { status: 404 });
+      if (att.truncated) return NextResponse.json({ error: "pièce jointe trop volumineuse" }, { status: 413 });
       // filename* UTF-8 + nosniff : le content-type vient de l'expéditeur.
       const name = encodeURIComponent(att.filename).replace(/'/g, "%27");
       return new NextResponse(new Uint8Array(att.content), {
@@ -52,7 +56,7 @@ export async function DELETE(req: Request) {
   const uidRaw = url.searchParams.get("uid");
   const uid = uidRaw === null ? NaN : Number(uidRaw);
   const sender = (url.searchParams.get("sender") ?? "").slice(0, SENDER_MAX);
-  if (!account || (!isUid(uid) && !sender)) {
+  if (!isKnownAccount(account) || (!isUid(uid) && !sender)) {
     return NextResponse.json({ error: "account + (uid or sender) required" }, { status: 400 });
   }
   try {

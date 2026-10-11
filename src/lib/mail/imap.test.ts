@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanHeaderValue, extractAddress, headerAddresses, sanitizeBody } from "./imap";
+import { cleanHeaderValue, extractAddress, headerAddresses, htmlToPlain, sanitizeBody } from "./imap";
 
 // C1 : un email piégé ne doit pas pouvoir exécuter de script dans l'app.
 describe("sanitizeBody — XSS", () => {
@@ -83,5 +83,20 @@ describe("headerAddresses", () => {
     for (const v of ["  ", "pas une adresse", "a@b.c\r\nCc: e@f.g"]) {
       expect(() => headerAddresses(v), v).toThrow("destinataire invalide");
     }
+  });
+});
+
+describe("htmlToPlain — texte dérivé des mails html-only", () => {
+  it("strip les tags, préserve les sauts de bloc", () => {
+    const html = "<p>Bonjour <b>Florence</b>,</p><p>Voici le <a href='https://x.fr'>lien</a> du dossier.</p><ul><li>un</li><li>deux</li></ul>";
+    const out = htmlToPlain(html);
+    expect(out).toContain("Bonjour Florence");
+    expect(out).toContain("lien");
+    expect(out).toContain("un\ndeux");
+    expect(out).not.toContain("<");
+  });
+  it("pas de markup résiduel ni d'entités brutes", () => {
+    const out = htmlToPlain("<div style='x'>A&nbsp;B &amp; C</div>");
+    expect(out).toBe("A B & C");
   });
 });

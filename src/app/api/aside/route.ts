@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { addAside, dbReady, removeAside } from "@/lib/db";
 import { invalidateMail } from "@/lib/cache";
 import { internalError, isUid, parseJson } from "@/lib/api";
+import { isKnownAccount } from "@/lib/mail/accounts";
 
 function parse(req: Request): Promise<{ account: string; uid: number } | null> {
   return parseJson(req).then((body) => {
     const account = typeof body?.account === "string" ? body.account : "";
     const uid = body?.uid;
-    if (!account || !isUid(uid)) return null;
+    if (!isKnownAccount(account) || !isUid(uid)) return null;
     return { account, uid };
   });
 }

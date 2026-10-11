@@ -20,7 +20,9 @@ export async function GET(req: Request) {
   const muted = new Set(mutedRows.map((m) => `${m.account}:${m.sender}`));
   const mutedFor = (id: string) => mutedRows.filter((m) => m.account === id).map((m) => m.sender);
   const events: string[] = [];
-  for (const acc of getAccounts()) {
+  for (const acc of getAccounts().filter((a) => !a.manual)) {
+    // Comptes manual: jamais de polling automatique (ex. free.fr bloque les
+    // logins IMAP répétés depuis des IP de datacenter).
     try {
       const stats = await inboxStats(acc, mutedFor(acc.id));
       const unseen = Math.max(0, stats.unseen - stats.mutedUnseen);
@@ -34,14 +36,17 @@ export async function GET(req: Request) {
       }
       await setLastSeen(acc.id, unseen);
     } catch (e) {
-      events.push(`${acc.id}: error ${e instanceof Error ? e.message : e}`);
+      // Détail loggé serveur uniquement — la réponse reste générique.
+      console.error(`[cron] ${acc.id}`, e instanceof Error ? e.message : e);
+      events.push(`${acc.id}: error`);
     }
   }
   try {
     const sent = await checkReminders(true);
     if (sent > 0) events.push(`rappels agenda: ${sent}`);
   } catch (e) {
-    events.push(`reminders: error ${e instanceof Error ? e.message : e}`);
+    console.error("[cron] reminders", e instanceof Error ? e.message : e);
+    events.push("reminders: error");
   }
   return NextResponse.json({ ok: true, events });
 }

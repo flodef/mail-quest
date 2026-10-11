@@ -181,7 +181,7 @@ export function useAppBadge(count: number) {
 
 // ---------- Sync offline (snapshot + outbox) ----------
 
-export function useOfflineSync(applySnapshot: (s: Snapshot) => void) {
+export function useOfflineSync(applySnapshot: (s: Snapshot) => void, onAuthLost: () => void) {
   // Init à false puis effect : navigator.onLine en init casserait l'hydratation
   // (rendu serveur différent du rendu client hors-ligne).
   const [offline, setOffline] = useState(false);
@@ -202,6 +202,11 @@ export function useOfflineSync(applySnapshot: (s: Snapshot) => void) {
         fetch("/api/agenda").catch(() => null),
         fetch("/api/inbox-order").catch(() => null),
       ]);
+      // Session morte → redirect login (pas un "hors-ligne").
+      if ([ovR, tkR, ntR, agR, ioR].some((r) => r && (r.status === 401 || r.status === 403))) {
+        onAuthLost();
+        return;
+      }
       if (!ovR.ok || !tkR.ok || !ntR.ok) throw new Error("api error");
       const [ov, tk, nt, ag, io] = await Promise.all([
         ovR.json(),
@@ -216,8 +221,8 @@ export function useOfflineSync(applySnapshot: (s: Snapshot) => void) {
       const snap: Snapshot = {
         accounts: ov.accounts ?? [],
         muted: ov.muted ?? [],
-        pile: (ov.accounts ?? []).flatMap((a: OverviewAccount & { active?: Draft[] }) => a.active ?? []),
-        aside: (ov.accounts ?? []).flatMap((a: OverviewAccount & { aside?: Draft[] }) => a.aside ?? []),
+        pile: (ov.accounts ?? []).flatMap((a: OverviewAccount) => a.active ?? []),
+        aside: (ov.accounts ?? []).flatMap((a: OverviewAccount) => a.aside ?? []),
         tasks: tk.tasks ?? [],
         notes: nt.notes ?? [],
         agenda: ag?.events ?? [],
@@ -234,7 +239,7 @@ export function useOfflineSync(applySnapshot: (s: Snapshot) => void) {
     } finally {
       setLoading(false);
     }
-  }, [applySnapshot]);
+  }, [applySnapshot, onAuthLost]);
 
   // Sync sérialisée : un seul flush à la fois, trailing-edge — une mutation
   // arrivée en cours de route est rejouée dans l'itération suivante, et un
@@ -252,8 +257,13 @@ export function useOfflineSync(applySnapshot: (s: Snapshot) => void) {
       do {
         syncAgain.current = false;
         const had = pendingOps().length;
-        const remaining = await flushOps();
+        const { remaining, authLost } = await flushOps();
         setPending(remaining);
+        if (authLost) {
+          // Session expirée : les ops sont conservées pour après re-login.
+          onAuthLost();
+          return;
+        }
         if (remaining === 0) setOffline(false);
         flushed ||= had > remaining;
         if (remaining > 0) return; // hors-ligne ou serveur KO — on retentera
@@ -263,7 +273,7 @@ export function useOfflineSync(applySnapshot: (s: Snapshot) => void) {
       syncing.current = false;
       if (syncAgain.current) void sync(); // op arrivée pendant le refresh final
     }
-  }, [refresh]);
+  }, [refresh, onAuthLost]);
 
   // Mutation offline-capable : toujours en file pour préserver l'ordre,
   // flush immédiat (no-op réseau quand en ligne).

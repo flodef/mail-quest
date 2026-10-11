@@ -4,6 +4,11 @@ export interface MailAccount {
   color: string;
   imap: { host: string; port: number; secure: boolean; user: string; password: string };
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string };
+  // "manual": true dans MAIL_ACCOUNTS → AUCUN polling auto (cron + overview
+  // l'ignorent) : le compte n'est relevé qu'à l'ouverture de sa boîte, via
+  // /api/account. Pour les fournisseurs qui bloquent les logins IMAP
+  // répétés depuis des IP de datacenter (ex. free.fr).
+  manual?: boolean;
 }
 
 const ACCOUNT_COLORS: Record<string, string> = {
@@ -22,6 +27,14 @@ export function getAccounts(): MailAccount[] {
   const parsed = JSON.parse(raw) as Omit<MailAccount, "color">[];
   cached = parsed.map((a) => ({ ...a, color: ACCOUNT_COLORS[a.id] ?? "#888" }));
   return cached;
+}
+
+export function isKnownAccount(id: string): boolean {
+  try {
+    return getAccounts().some((a) => a.id === id);
+  } catch {
+    return false;
+  }
 }
 
 export function getAccount(id: string): MailAccount {

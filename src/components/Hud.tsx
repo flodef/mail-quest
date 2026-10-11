@@ -1,6 +1,6 @@
 "use client";
 
-import { IconMail, IconHourglass } from "@tabler/icons-react";
+import { IconMail, IconHourglass, IconHandStop } from "@tabler/icons-react";
 
 import type { AccountBadge } from "@/lib/types";
 
@@ -17,8 +17,8 @@ export default function Hud({ accounts, onAccountTap }: { accounts: AccountBadge
           <span className="font-pixel text-[6px] uppercase opacity-80 truncate text-center leading-tight">{a.id}</span>
           <span className="flex items-center justify-center gap-1.5 text-sm">
             <span className="w-2.5 h-2.5 rounded-[2px] shrink-0" style={{ background: a.color }} />
-            <span className="flex items-center gap-0.5">
-              <IconMail size={13} /> {a.error ? "!" : (a.unseen ?? 0)}
+            <span className="flex items-center gap-0.5" title={a.manual ? "Relevé manuel — cliquer pour charger" : undefined}>
+              {a.manual ? <IconHandStop size={13} /> : <><IconMail size={13} /> {a.error ? "!" : (a.unseen ?? 0)}</>}
             </span>
             <span className="flex items-center gap-0.5 text-[var(--gold-bright)]">
               <IconHourglass size={13} /> {a.draftCount ?? 0}

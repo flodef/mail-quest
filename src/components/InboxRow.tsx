@@ -7,16 +7,6 @@ import type { ReactNode } from "react";
 
 const SWIPE_X = 90;
 
-export function fmtDate(d: string | null): string {
-  if (!d) return "";
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return "";
-  const now = new Date();
-  const sameDay = dt.toDateString() === now.toDateString();
-  const hm = dt.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  return sameDay ? hm : `${dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${hm}`;
-}
-
 export default function InboxRow({
   onOpen,
   onToggleMenu,

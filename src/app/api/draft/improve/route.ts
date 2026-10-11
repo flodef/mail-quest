@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccount } from "@/lib/mail/accounts";
+import { getAccount, isKnownAccount } from "@/lib/mail/accounts";
 import { getDraft, findOriginalMessage, createReplyDraft, moveDraft } from "@/lib/mail/imap";
 import { improveDraft } from "@/lib/ai";
 import { internalError, isUid, parseJson } from "@/lib/api";
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   const account = typeof body?.account === "string" ? body.account : "";
   const uid = body?.uid;
   const instructions = typeof body?.instructions === "string" ? body.instructions.trim() : "";
-  if (!account || !isUid(uid) || !instructions || instructions.length > INSTRUCTIONS_MAX) {
+  if (!isKnownAccount(account) || !isUid(uid) || !instructions || instructions.length > INSTRUCTIONS_MAX) {
     return NextResponse.json({ error: "account, uid, instructions required" }, { status: 400 });
   }
   try {

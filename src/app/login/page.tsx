@@ -33,7 +33,6 @@ export default function LoginPage() {
         <p className="text-lg text-center opacity-80">Entre le code secret pour ouvrir le portail</p>
         <input
           type="password"
-          inputMode="numeric"
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}

@@ -15,6 +15,7 @@
     "@tabler/icons-react": "^3.48.0",
     "framer-motion": "^13.4.6",
     "imapflow": "^2.1.2",
+    "libmime": "5.4.6",
     "mailparser": "^3.9.31",
     "next": "16.3.8",
     "nodemailer": "^10.0.12",

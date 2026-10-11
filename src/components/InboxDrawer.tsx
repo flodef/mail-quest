@@ -13,7 +13,8 @@ import {
   IconWand,
   IconX,
 } from "@tabler/icons-react";
-import InboxRow, { fmtDate } from "@/components/InboxRow";
+import InboxRow from "@/components/InboxRow";
+import { fmtShort } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import SortableList from "@/components/SortableList";
 import type { InboxItem, MutedEntry, OverviewAccount } from "@/lib/types";
@@ -29,6 +30,7 @@ export default function InboxDrawer({
   muted,
   trash,
   busy,
+  polling,
   onClose,
   onOpen,
   onReorder,
@@ -44,6 +46,8 @@ export default function InboxDrawer({
   muted: MutedEntry[];
   trash: InboxItem[] | null;
   busy: boolean;
+  /** Relevé manuel en cours (comptes "manual" : pas de polling auto). */
+  polling?: boolean;
   onClose: () => void;
   onOpen: (m: InboxItem) => void;
   onReorder: (next: InboxItem[]) => void;
@@ -94,7 +98,7 @@ export default function InboxDrawer({
                 <div className="flex items-baseline gap-2 pr-8">
                   <div className="text-lg leading-tight flex-1 min-w-0">{m.from}</div>
                   {m.hasAttachment && <IconPaperclip size={14} className="shrink-0 opacity-60" />}
-                  <div className="font-pixel text-[6px] opacity-50 shrink-0 pr-6">{fmtDate(m.date)}</div>
+                  <div className="font-pixel text-[6px] opacity-50 shrink-0 pr-6">{fmtShort(m.date)}</div>
                 </div>
                 <div className="opacity-80 pr-8">{m.subject}</div>
               </InboxRow>
@@ -122,7 +126,12 @@ export default function InboxDrawer({
           </div>
         )}
       />
-      {items.length === 0 && !inbox.error && <div className="opacity-60 py-4 text-center">Aucune missive dans cette boîte.</div>}
+      {polling && <div className="opacity-60 py-4 text-center font-pixel text-[8px] animate-pulse">Relève en cours…</div>}
+      {items.length === 0 && !inbox.error && !polling && (
+        <div className="opacity-60 py-4 text-center">
+          {inbox.manual && inbox.latest === undefined ? "Boîte à relevé manuel — aucun relevé en mémoire." : "Aucune missive dans cette boîte."}
+        </div>
+      )}
       {inbox.error && <div className="text-[var(--ruby)]">Erreur : boîte injoignable.</div>}
 
       {/* Potence : corbeille IMAP du compte (voir / ressusciter / purger) */}
@@ -147,7 +156,7 @@ export default function InboxDrawer({
                   <div key={m.uid} className="flex items-center gap-3 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a] opacity-70">
                     <div className="flex-1 min-w-0">
                       <div className="truncate text-base leading-tight">{m.from} — {m.subject}</div>
-                      <div className="font-pixel text-[6px] opacity-60">{fmtDate(m.date)}</div>
+                      <div className="font-pixel text-[6px] opacity-60">{fmtShort(m.date)}</div>
                     </div>
                     <button className="btn-pixel ghost !py-1.5 !px-2" title="Ressusciter (retour boîte)" disabled={busy} onClick={() => onTrashAction(m, "restore")}>
                       <IconArrowBackUp size={16} />

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbReady, listInboxOrder, setInboxOrder } from "@/lib/db";
 import { internalError, isUid, parseJson } from "@/lib/api";
+import { isKnownAccount } from "@/lib/mail/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
   const body = await parseJson(req);
   const account = typeof body?.account === "string" ? body.account : "";
   const uids = Array.isArray(body?.uids) ? body.uids.filter(isUid).slice(0, ORDER_MAX) : null;
-  if (!account || !uids) return NextResponse.json({ error: "account + uids required" }, { status: 400 });
+  if (!isKnownAccount(account) || !uids) return NextResponse.json({ error: "account + uids required" }, { status: 400 });
   try {
     await setInboxOrder(account, uids);
     return NextResponse.json({ ok: true });
