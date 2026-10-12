@@ -387,7 +387,7 @@ export default function Game() {
     mutate({ url: "/api/notes", init: patch({ order: ids }) });
   }
 
-  // --- Agenda (échéances datées + rappel mail) ---
+  // --- Prophéties (événements datés + rappel mail) ---
 
   const sortAgenda = (es: AgendaEvent[]) =>
     [...es].sort((a, b) => (a.done === b.done ? +new Date(a.due_at) - +new Date(b.due_at) : a.done ? 1 : -1));
@@ -411,11 +411,11 @@ export default function Game() {
 
   const agendaDelete = (id: string) =>
     setConfirm({
-      label: "Jeter cette échéance à la potence ?",
+      label: "Jeter cette prophétie à la potence ?",
       run: () => {
         setAgenda((es) => es.filter((e) => e.id !== id));
         mutate({ url: `/api/agenda?id=${id}`, init: { method: "DELETE" } });
-        say("Échéance jetée", IconTrash);
+        say("Prophétie jetée", IconTrash);
       },
     });
 

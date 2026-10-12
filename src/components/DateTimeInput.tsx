@@ -215,7 +215,10 @@ export default function DateTimeInput({
                 onChange={(e) => setTime(shown.getHours(), parseInt(e.target.value))}
                 className="w-full bg-[var(--shadow)] border-2 border-[var(--gold)] px-2 py-1.5 text-base outline-none focus:border-[var(--gold-bright)] [color-scheme:dark]"
               >
-                {[0, 15, 30, 45].map((i) => (
+                {/* Minute courante incluse si hors-grille — sinon le select
+                    affiche 00 alors que la valeur reste ex. :03, et choisir
+                    "00" ne déclenche aucun onChange (rien ne change). */}
+                {[...new Set([shown.getMinutes(), 0, 15, 30, 45])].sort((a, b) => a - b).map((i) => (
                   <option key={i} value={i}>{pad(i)}</option>
                 ))}
               </select>

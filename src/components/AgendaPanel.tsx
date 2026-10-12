@@ -79,7 +79,7 @@ function AgendaRow({
           <div className="text-lg leading-snug break-words line-through">{ev.text}{ev.who ? ` avec ${ev.who}` : ""}</div>
           <div className="font-pixel text-[6px] opacity-60">{fmtWhen(ev.due_at, now)}</div>
         </div>
-        <button className="shrink-0 opacity-70 hover:opacity-100" disabled={busy} title="Remettre dans l'agenda" onClick={() => onUndone(ev.id)}>
+        <button className="shrink-0 opacity-70 hover:opacity-100" disabled={busy} title="Remettre dans les prophéties" onClick={() => onUndone(ev.id)}>
           <IconArrowBackUp size={16} />
         </button>
         <button className="shrink-0 opacity-70 hover:opacity-100" disabled={busy} title="Jeter à la potence" onClick={() => onDelete(ev.id)}>
@@ -115,7 +115,6 @@ function AgendaRow({
                   if (e.key === "Enter") save();
                   else if (e.key === "Escape") setEditing(false);
                 }}
-                onBlur={save}
               />
             </div>
           ) : (
@@ -130,7 +129,7 @@ function AgendaRow({
               {ev.text}{ev.who ? ` avec ${ev.who}` : ""}
             </div>
           )}
-          {/* Toucher la date ouvre l'éditeur d'échéance (date + rappel). */}
+          {/* Toucher la date ouvre l'éditeur de prophétie (date + rappel). */}
           <button
             className={`font-pixel text-[6px] mt-0.5 text-left ${past ? "text-[var(--ruby)]" : "opacity-60 hover:opacity-100"}`}
             disabled={busy}
@@ -144,17 +143,30 @@ function AgendaRow({
             {fmtWhen(ev.due_at, now)} · 🔔 {remindLabel(ev.remind_minutes)} AVANT
           </button>
         </div>
-        <button className="btn-pixel ghost !p-1.5 shrink-0" disabled={busy} title="Fait" onClick={() => onDone(ev.id)}>
-          <IconCheck size={16} />
-        </button>
-        <button className="btn-pixel danger !p-1.5 shrink-0" disabled={busy} title="Jeter à la potence" onClick={() => onDelete(ev.id)}>
-          <IconTrash size={16} />
-        </button>
+        {editing ? (
+          <>
+            <button className="btn-pixel !p-1.5 shrink-0" disabled={busy} title="Valider" onClick={save}>
+              <IconCheck size={16} />
+            </button>
+            <button className="btn-pixel ghost !p-1.5 shrink-0" disabled={busy} title="Annuler" onClick={() => setEditing(false)}>
+              <IconX size={16} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn-pixel ghost !p-1.5 shrink-0" disabled={busy} title="Fait" onClick={() => onDone(ev.id)}>
+              <IconCheck size={16} />
+            </button>
+            <button className="btn-pixel danger !p-1.5 shrink-0" disabled={busy} title="Jeter à la potence" onClick={() => onDelete(ev.id)}>
+              <IconTrash size={16} />
+            </button>
+          </>
+        )}
       </div>
       {editingWhen && (
         <div className="flex gap-2 items-center flex-wrap border-t border-[#3a5a2a] pt-2">
           <DateTimeInput value={draftWhen} onChange={setDraftWhen} min={min} disabled={busy} className="flex-1 min-w-[220px]" />
-          <select className={selectCls} value={draftRemind} onChange={(e) => setDraftRemind(Number(e.target.value))} title="Rappel avant l'échéance">
+          <select className={selectCls} value={draftRemind} onChange={(e) => setDraftRemind(Number(e.target.value))} title="Rappel avant la prophétie">
             {REMIND_OPTIONS.map((o) => (
               <option key={o.m} value={o.m}>-{o.l}</option>
             ))}
@@ -240,7 +252,7 @@ export default function AgendaPanel({
       <div className="flex flex-col gap-2">
         <input
           className="w-full bg-[var(--shadow)] border-2 border-[var(--gold)] px-3 py-2 text-lg outline-none focus:border-[var(--gold-bright)]"
-          placeholder="Nouvelle échéance…"
+          placeholder="Nouvelle prophétie…"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -258,7 +270,7 @@ export default function AgendaPanel({
             className={`${selectCls} !py-2`}
             value={remind}
             onChange={(e) => setRemind(Number(e.target.value))}
-            title="Rappel par mail avant l'échéance"
+            title="Rappel par mail avant la prophétie"
           >
             {REMIND_OPTIONS.map((o) => (
               <option key={o.m} value={o.m}>-{o.l}</option>
@@ -269,7 +281,7 @@ export default function AgendaPanel({
         <div className="font-pixel text-[6px] opacity-50">RAPPEL PAR MAIL {remindLabel(remind).toUpperCase()} AVANT</div>
       </div>
 
-      {upcoming.length === 0 && <div className="opacity-60">Aucune échéance à venir.</div>}
+      {upcoming.length === 0 && <div className="opacity-60">Aucune prophétie à venir.</div>}
       <div className="flex flex-col gap-1.5">
         {upcoming.map((ev) => (
           <AgendaRow key={ev.id} ev={ev} now={now} busy={busy} min={min} onDone={onDone} onUndone={onUndone} onDelete={onDelete} onUpdate={onUpdate} onSchedule={onSchedule} />
