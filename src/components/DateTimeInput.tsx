@@ -8,8 +8,10 @@ type Seg = "day" | "month" | "year" | "hour" | "minute";
 const SEGMENTS: Seg[] = ["day", "month", "year", "hour", "minute"];
 const pad = (n: number) => String(n).padStart(2, "0");
 
+// Surbrillance par fond seul : un border-2 autour du segment affichait des
+// traits haut/bas qui ressemblaient à des underscore/retraits bizarres.
 const segCls = (active: boolean) =>
-  `px-0.5 border-2 transition-colors cursor-pointer ${active ? "border-[var(--gold-bright)] bg-[var(--gold)]/30" : "border-transparent"}`;
+  `px-0.5 rounded transition-colors cursor-pointer ${active ? "bg-[var(--gold)]/40 text-[var(--gold-bright)]" : ""}`;
 
 /**
  * Champ date+heure « JJ/MM/AAAA à HH:MM » — version mail-quest du
@@ -98,7 +100,7 @@ export default function DateTimeInput({
       else if (seg === "month" && n >= 1 && n <= 12) d.setMonth(n - 1);
       else if (seg === "year" && n > 0) d.setFullYear(n);
       else if (seg === "hour" && n <= 23) d.setHours(n);
-      else if (seg === "minute" && n <= 59) d.setMinutes(n);
+      else if (seg === "minute" && n <= 59) d.setMinutes(Math.min(45, Math.round(n / 15) * 15));
       apply(d);
       setDigits("");
       setSeg(SEGMENTS[(SEGMENTS.indexOf(seg) + 1) % SEGMENTS.length]);
@@ -116,7 +118,7 @@ export default function DateTimeInput({
       else if (seg === "month") d.setMonth(d.getMonth() + delta);
       else if (seg === "year") d.setFullYear(d.getFullYear() + delta);
       else if (seg === "hour") d.setHours(d.getHours() + delta);
-      else d.setMinutes(d.getMinutes() + delta);
+      else d.setMinutes(d.getMinutes() + delta * 15); // minutes par quart d'heure
       apply(d);
     }
   };
@@ -213,7 +215,7 @@ export default function DateTimeInput({
                 onChange={(e) => setTime(shown.getHours(), parseInt(e.target.value))}
                 className="w-full bg-[var(--shadow)] border-2 border-[var(--gold)] px-2 py-1.5 text-base outline-none focus:border-[var(--gold-bright)] [color-scheme:dark]"
               >
-                {Array.from({ length: 60 }, (_, i) => (
+                {[0, 15, 30, 45].map((i) => (
                   <option key={i} value={i}>{pad(i)}</option>
                 ))}
               </select>

@@ -14,6 +14,10 @@ export const dynamic = "force-dynamic";
 
 const isDate = (v: unknown): v is string => typeof v === "string" && !Number.isNaN(Date.parse(v));
 const TEXT_MAX = 1000;
+const WHO_MAX = 200;
+// who : string non vide cappée, sinon null (champ optionnel).
+const whoOf = (v: unknown): string | null =>
+  typeof v === "string" && v.trim() ? v.trim().slice(0, WHO_MAX) : null;
 const REMIND_MAX_MIN = 30 * 24 * 60; // 30 jours
 const remindOk = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= REMIND_MAX_MIN;
 
@@ -35,7 +39,7 @@ export async function POST(req: Request) {
   if (!isDate(body?.dueAt)) return NextResponse.json({ error: "dueAt required" }, { status: 400 });
   const remind = remindOk(body.remindMinutes) ? body.remindMinutes : 30;
   try {
-    const event = await addAgenda(text, new Date(body.dueAt).toISOString(), remind, isUuid(body.id) ? body.id : undefined);
+    const event = await addAgenda(text, new Date(body.dueAt).toISOString(), remind, isUuid(body.id) ? body.id : undefined, whoOf(body.who));
     return NextResponse.json({ ok: true, event });
   } catch (e) {
     return internalError(e, "agenda");
@@ -53,7 +57,7 @@ export async function PATCH(req: Request) {
       const remind = remindOk(body.remindMinutes) ? body.remindMinutes : 30;
       await updateAgendaSchedule(body.id, new Date(body.dueAt).toISOString(), remind);
     } else if (typeof body.text === "string" && body.text.trim() && body.text.length <= TEXT_MAX) {
-      await updateAgendaText(body.id, body.text.trim());
+      await updateAgendaText(body.id, body.text.trim(), whoOf(body.who));
     } else {
       return NextResponse.json({ error: "nothing to do" }, { status: 400 });
     }

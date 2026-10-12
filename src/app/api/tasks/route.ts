@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addTasks, dbReady, deleteTask, listTasks, purgeDoneTasks, reorderTasks, setTaskDone, taskToBottom, updateTask } from "@/lib/db";
+import { addTasks, dbReady, deleteTask, listTasks, purgeDoneTasks, reorderTasks, setTaskDone, taskToBottom, taskToTop, updateTask } from "@/lib/db";
 import { internalError, isUuid, parseJson } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +46,7 @@ export async function PATCH(req: Request) {
       await reorderTasks(order);
     } else if (isUuid(body.id)) {
       if (body.toBottom === true) await taskToBottom(body.id);
+      else if (body.toTop === true) await taskToTop(body.id);
       else if (typeof body.done === "boolean") await setTaskDone(body.id, body.done);
       else if (typeof body.text === "string" && body.text.trim() && body.text.length <= TEXT_MAX) await updateTask(body.id, body.text.trim());
       else return NextResponse.json({ error: "nothing to do" }, { status: 400 });

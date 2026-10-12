@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { IconArrowBackUp, IconCheck, IconChevronDown, IconClipboardCopy, IconCopyCheck, IconPlus, IconSearch, IconSkull, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
+import RefreshButton from "@/components/RefreshButton";
 import Sheet from "@/components/Sheet";
 import SortableList from "@/components/SortableList";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -13,11 +14,14 @@ const VISIBLE = 5;
 export default function QuestPanel({
   tasks,
   busy,
+  refreshing,
   onClose,
+  onRefresh,
   onAdd,
   onDone,
   onUndone,
   onBottom,
+  onTop,
   onReorder,
   onPurge,
   onPurgeOne,
@@ -25,11 +29,14 @@ export default function QuestPanel({
 }: {
   tasks: Task[];
   busy: boolean;
+  refreshing?: boolean;
+  onRefresh?: () => void;
   onClose: () => void;
   onAdd: (text: string) => void;
   onDone: (id: string) => void;
   onUndone: (id: string) => void;
   onBottom: (id: string) => void;
+  onTop: (id: string) => void;
   onReorder: (ids: string[]) => void;
   onPurge: () => void;
   onPurgeOne: (id: string) => void;
@@ -94,6 +101,7 @@ export default function QuestPanel({
             >
               {copied ? <IconCopyCheck size={18} className="text-[var(--link-green)]" /> : <IconClipboardCopy size={18} />}
             </button>
+            {onRefresh && <RefreshButton onClick={onRefresh} spinning={refreshing} disabled={busy} />}
             <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
           </div>
         </div>
@@ -158,9 +166,13 @@ export default function QuestPanel({
             <SortableList
               items={active}
               onReorder={handleFullReorder}
-              renderItem={(t, grip, i) => (
-                <ItemRow item={t} grip={grip} dim={i >= VISIBLE} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} onEdit={(text) => onUpdate(t.id, text)} />
-              )}
+              renderItem={(t, grip, i) =>
+                i >= VISIBLE ? (
+                  <ItemRow item={t} grip={grip} dim doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇡ EN HAUT DE PILE" onDone={() => onDone(t.id)} onBottom={() => onTop(t.id)} onEdit={(text) => onUpdate(t.id, text)} />
+                ) : (
+                  <ItemRow item={t} grip={grip} doneLabel="⚔ QUÊTE FAITE" bottomLabel="⇣ FOND DE PILE" onDone={() => onDone(t.id)} onBottom={() => onBottom(t.id)} onEdit={(text) => onUpdate(t.id, text)} />
+                )
+              }
             />
           )}
           {active.length === 0 && <div className="opacity-60">Aucune quête en cours.</div>}

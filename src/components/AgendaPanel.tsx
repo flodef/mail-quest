@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { IconArrowBackUp, IconCheck, IconChevronDown, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import DateTimeInput from "@/components/DateTimeInput";
 import Sheet from "@/components/Sheet";
+import RefreshButton from "@/components/RefreshButton";
 import { fmtWhen, startOfToday } from "@/lib/dates";
 import type { AgendaEvent } from "@/lib/db";
 
@@ -46,19 +47,21 @@ function AgendaRow({
   onDone: (id: string) => void;
   onUndone: (id: string) => void;
   onDelete: (id: string) => void;
-  onUpdate: (id: string, text: string) => void;
+  onUpdate: (id: string, text: string, who: string | null) => void;
   onSchedule: (id: string, dueAt: string, remindMinutes: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editingWhen, setEditingWhen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [draftWho, setDraftWho] = useState("");
   const [draftWhen, setDraftWhen] = useState<Date | null>(null);
   const [draftRemind, setDraftRemind] = useState(ev.remind_minutes);
   const past = +new Date(ev.due_at) < now;
 
   function save() {
     const t = draft.trim();
-    if (t && t !== ev.text) onUpdate(ev.id, t);
+    const w = draftWho.trim() || null;
+    if ((t && t !== ev.text) || w !== ev.who) onUpdate(ev.id, t || ev.text, w);
     setEditing(false);
   }
 
@@ -73,7 +76,7 @@ function AgendaRow({
     return (
       <div className="flex items-center gap-2 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a]">
         <div className="flex-1 min-w-0">
-          <div className="text-lg leading-snug break-words line-through">{ev.text}</div>
+          <div className="text-lg leading-snug break-words line-through">{ev.text}{ev.who ? ` avec ${ev.who}` : ""}</div>
           <div className="font-pixel text-[6px] opacity-60">{fmtWhen(ev.due_at, now)}</div>
         </div>
         <button className="shrink-0 opacity-70 hover:opacity-100" disabled={busy} title="Remettre dans l'agenda" onClick={() => onUndone(ev.id)}>
@@ -91,26 +94,40 @@ function AgendaRow({
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           {editing ? (
-            <input
-              autoFocus
-              className="w-full bg-black/30 border border-[var(--gold)] px-2 py-0.5 text-lg outline-none focus:border-[var(--gold-bright)]"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") save();
-                else if (e.key === "Escape") setEditing(false);
-              }}
-              onBlur={save}
-            />
+            <div className="flex flex-col gap-1">
+              <input
+                autoFocus
+                className="w-full bg-black/30 border border-[var(--gold)] px-2 py-0.5 text-lg outline-none focus:border-[var(--gold-bright)]"
+                value={draft}
+                placeholder="quoi…"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") save();
+                  else if (e.key === "Escape") setEditing(false);
+                }}
+              />
+              <input
+                className="w-full bg-black/30 border border-[var(--gold)] px-2 py-0.5 text-base opacity-80 outline-none focus:border-[var(--gold-bright)]"
+                value={draftWho}
+                placeholder="avec qui ? (optionnel)"
+                onChange={(e) => setDraftWho(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") save();
+                  else if (e.key === "Escape") setEditing(false);
+                }}
+                onBlur={save}
+              />
+            </div>
           ) : (
             <div
               className="text-lg leading-snug break-words cursor-text"
               onClick={() => {
                 setDraft(ev.text);
+                setDraftWho(ev.who ?? "");
                 setEditing(true);
               }}
             >
-              {ev.text}
+              {ev.text}{ev.who ? ` avec ${ev.who}` : ""}
             </div>
           )}
           {/* Toucher la date ouvre l'éditeur d'échéance (date + rappel). */}
@@ -157,8 +174,10 @@ function AgendaRow({
 export default function AgendaPanel({
   events,
   busy,
+  refreshing,
   open,
   onClose,
+  onRefresh,
   onAdd,
   onDone,
   onUndone,
@@ -168,16 +187,19 @@ export default function AgendaPanel({
 }: {
   events: AgendaEvent[];
   busy: boolean;
+  refreshing?: boolean;
   open: boolean;
   onClose: () => void;
-  onAdd: (text: string, dueAt: string, remindMinutes: number) => void;
+  onRefresh?: () => void;
+  onAdd: (text: string, who: string | null, dueAt: string, remindMinutes: number) => void;
   onDone: (id: string) => void;
   onUndone: (id: string) => void;
   onDelete: (id: string) => void;
-  onUpdate: (id: string, text: string) => void;
+  onUpdate: (id: string, text: string, who: string | null) => void;
   onSchedule: (id: string, dueAt: string, remindMinutes: number) => void;
 }) {
   const [text, setText] = useState("");
+  const [who, setWho] = useState("");
   const [when, setWhen] = useState<Date | null>(null);
   const [remind, setRemind] = useState(30);
   const [showDone, setShowDone] = useState(false);
@@ -198,8 +220,9 @@ export default function AgendaPanel({
   function submit() {
     const t = text.trim();
     if (!t || !when) return;
-    onAdd(t, when.toISOString(), remind);
+    onAdd(t, who.trim() || null, when.toISOString(), remind);
     setText("");
+    setWho("");
     setWhen(null);
     setRemind(30);
   }
@@ -207,8 +230,11 @@ export default function AgendaPanel({
   return (
     <Sheet onClose={onClose}>
       <div className="flex items-center justify-between">
-        <div className="font-pixel text-[9px] text-[var(--gold-bright)]">📅 AGENDA ({upcoming.length})</div>
-        <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
+        <div className="font-pixel text-[9px] text-[var(--gold-bright)]">🔮 PROPHÉTIES ({upcoming.length})</div>
+        <div className="flex items-center gap-1.5">
+          {onRefresh && <RefreshButton onClick={onRefresh} spinning={refreshing} disabled={busy} />}
+          <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -217,6 +243,13 @@ export default function AgendaPanel({
           placeholder="Nouvelle échéance…"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        <input
+          className="w-full bg-[var(--shadow)] border-2 border-[var(--gold)] px-3 py-2 text-base opacity-80 outline-none focus:border-[var(--gold-bright)]"
+          placeholder="avec qui ? (optionnel)"
+          value={who}
+          onChange={(e) => setWho(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
         />
         <div className="flex gap-2 items-center">

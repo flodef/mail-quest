@@ -13,6 +13,7 @@ import DraftCard from "@/components/DraftCard";
 import Sheet from "@/components/Sheet";
 import Victory from "@/components/Victory";
 import QuestPanel from "@/components/QuestPanel";
+import RefreshButton from "@/components/RefreshButton";
 import NotesPanel from "@/components/NotesPanel";
 import AgendaPanel from "@/components/AgendaPanel";
 import InboxDrawer from "@/components/InboxDrawer";
@@ -300,6 +301,20 @@ export default function Game() {
     mutate({ url: "/api/tasks", init: patch({ id, toBottom: true }) });
   }
 
+  function questTop(id: string) {
+    // Réserve → tout en haut de la pile active (devient n°1 du top 5).
+    setTasks((ts) =>
+      sortTasks(
+        ts.map((t) =>
+          t.id === id
+            ? { ...t, position: Math.min(0, ...ts.filter((x) => !x.done && x.id !== id).map((x) => x.position)) - 1 }
+            : t,
+        ),
+      ),
+    );
+    mutate({ url: "/api/tasks", init: patch({ id, toTop: true }) });
+  }
+
   function questUpdate(id: string, text: string) {
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, text } : t)));
     mutate({ url: "/api/tasks", init: patch({ id, text }) });
@@ -377,11 +392,11 @@ export default function Game() {
   const sortAgenda = (es: AgendaEvent[]) =>
     [...es].sort((a, b) => (a.done === b.done ? +new Date(a.due_at) - +new Date(b.due_at) : a.done ? 1 : -1));
 
-  function agendaAdd(text: string, dueAt: string, remindMinutes: number) {
+  function agendaAdd(text: string, who: string | null, dueAt: string, remindMinutes: number) {
     const id = crypto.randomUUID();
-    setAgenda((es) => sortAgenda([...es, { id, text, due_at: dueAt, remind_minutes: remindMinutes, done: false, reminded_at: null, created_at: new Date().toISOString() }]));
-    mutate({ url: "/api/agenda", init: json({ id, text, dueAt, remindMinutes }) });
-    say("Échéance inscrite à l'agenda", IconCalendarClock);
+    setAgenda((es) => sortAgenda([...es, { id, text, who, due_at: dueAt, remind_minutes: remindMinutes, done: false, reminded_at: null, created_at: new Date().toISOString() }]));
+    mutate({ url: "/api/agenda", init: json({ id, text, who, dueAt, remindMinutes }) });
+    say("Rendez-vous gravé dans le destin", IconCalendarClock);
   }
 
   function agendaDone(id: string) {
@@ -404,9 +419,9 @@ export default function Game() {
       },
     });
 
-  function agendaUpdate(id: string, text: string) {
-    setAgenda((es) => es.map((e) => (e.id === id ? { ...e, text } : e)));
-    mutate({ url: "/api/agenda", init: patch({ id, text }) });
+  function agendaUpdate(id: string, text: string, who: string | null) {
+    setAgenda((es) => es.map((e) => (e.id === id ? { ...e, text, who } : e)));
+    mutate({ url: "/api/agenda", init: patch({ id, text, who }) });
   }
 
   function agendaSchedule(id: string, dueAt: string, remindMinutes: number) {
@@ -601,7 +616,7 @@ export default function Game() {
       <div className="flex items-center justify-between">
         <div className="font-pixel text-[9px] opacity-80">MISSIVES À EXPÉDIER : {pile.length}</div>
         <div className="flex gap-1.5">
-          <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowAgenda(true)} title="Agenda">
+          <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowAgenda(true)} title="Prophéties">
             <IconCalendarClock size={16} /> {agenda.filter((e) => !e.done).length}
           </button>
           <button className="btn-pixel ghost !px-2 !py-1 text-[9px] flex items-center gap-1" onClick={() => setShowNotes(true)} title="Fourre-tout">
@@ -662,11 +677,14 @@ export default function Game() {
         <QuestPanel
           tasks={tasks}
           busy={!!busy}
+          refreshing={loading}
+          onRefresh={() => void refresh()}
           onClose={() => setShowQuest(false)}
           onAdd={questAdd}
           onDone={questDone}
           onUndone={questUndone}
           onBottom={questBottom}
+          onTop={questTop}
           onReorder={questReorder}
           onPurge={questPurge}
           onPurgeOne={questPurgeOne}
@@ -678,6 +696,8 @@ export default function Game() {
         <NotesPanel
           notes={notes}
           busy={!!busy}
+          refreshing={loading}
+          onRefresh={() => void refresh()}
           onClose={() => setShowNotes(false)}
           onAdd={noteAdd}
           onDelete={noteDelete}
@@ -690,6 +710,8 @@ export default function Game() {
         <AgendaPanel
           events={agenda}
           busy={!!busy}
+          refreshing={loading}
+          onRefresh={() => void refresh()}
           open={showAgenda}
           onClose={() => setShowAgenda(false)}
           onAdd={agendaAdd}
@@ -712,6 +734,7 @@ export default function Game() {
                   <IconTrash size={16} /> Briser la jarre
                 </button>
               )}
+              <RefreshButton onClick={() => void refresh()} spinning={loading} disabled={!!busy} />
               <button className="btn-pixel ghost !px-2" onClick={() => setShowAside(false)}><IconX size={18} /></button>
             </div>
           </div>
@@ -741,6 +764,8 @@ export default function Game() {
           muted={muted}
           trash={trash}
           busy={!!busy}
+          refreshing={loading}
+          onRefresh={() => { void refresh(); if (inbox.manual) void pollAccount(inbox.id); }}
           onClose={() => { setInboxOf(null); setTrash(null); }}
           onOpen={(m) => void readMsg(m)}
           onReorder={(next) => inboxReorder(inbox.id, next)}

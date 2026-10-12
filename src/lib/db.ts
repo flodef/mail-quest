@@ -62,12 +62,14 @@ export async function initDb(): Promise<void> {
   await q`CREATE TABLE IF NOT EXISTS agenda (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     text TEXT NOT NULL,
+    who TEXT,
     due_at TIMESTAMPTZ NOT NULL,
     remind_minutes INTEGER NOT NULL DEFAULT 30,
     done BOOLEAN NOT NULL DEFAULT false,
     reminded_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now()
   )`;
+  await q`ALTER TABLE agenda ADD COLUMN IF NOT EXISTS who TEXT`;
   await q`CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -191,6 +193,11 @@ export async function taskToBottom(id: string): Promise<void> {
   await sql()`UPDATE tasks SET position = (SELECT COALESCE(MAX(position), 0) + 1 FROM tasks) WHERE id=${id}`;
 }
 
+export async function taskToTop(id: string): Promise<void> {
+  // En haut de la pile ACTIVE (devient visible dans le top 5) — `done` inchangé.
+  await sql()`UPDATE tasks SET position = (SELECT COALESCE(MIN(position), 1) - 1 FROM tasks WHERE done=false AND id<>${id}) WHERE id=${id}`;
+}
+
 export async function reorderTasks(ids: string[]): Promise<void> {
   if (!ids.length) return;
   const q = sql();
@@ -260,6 +267,8 @@ export async function updateNote(id: string, body: string): Promise<void> {
 export interface AgendaEvent {
   id: string;
   text: string;
+  /** "Quoi … avec qui" — participant affiché avec le texte. */
+  who: string | null;
   due_at: string;
   remind_minutes: number;
   done: boolean;
@@ -269,31 +278,31 @@ export interface AgendaEvent {
 
 export async function listAgenda(): Promise<AgendaEvent[]> {
   await ensureDb();
-  const rows = await sql()`SELECT id, text, due_at, remind_minutes, done, reminded_at, created_at
+  const rows = await sql()`SELECT id, text, who, due_at, remind_minutes, done, reminded_at, created_at
     FROM agenda ORDER BY done ASC, due_at ASC`;
   return rows as unknown as AgendaEvent[];
 }
 
-export async function addAgenda(text: string, dueAt: string, remindMinutes: number, id?: string): Promise<AgendaEvent> {
+export async function addAgenda(text: string, dueAt: string, remindMinutes: number, id?: string, who?: string | null): Promise<AgendaEvent> {
   await ensureDb();
   const rows = id
-    ? await sql()`INSERT INTO agenda (id, text, due_at, remind_minutes)
-        VALUES (${id}::uuid, ${text}, ${dueAt}::timestamptz, ${remindMinutes})
+    ? await sql()`INSERT INTO agenda (id, text, who, due_at, remind_minutes)
+        VALUES (${id}::uuid, ${text}, ${who ?? null}, ${dueAt}::timestamptz, ${remindMinutes})
         ON CONFLICT (id) DO NOTHING
-        RETURNING id, text, due_at, remind_minutes, done, reminded_at, created_at`
-    : await sql()`INSERT INTO agenda (text, due_at, remind_minutes)
-        VALUES (${text}, ${dueAt}::timestamptz, ${remindMinutes})
-        RETURNING id, text, due_at, remind_minutes, done, reminded_at, created_at`;
+        RETURNING id, text, who, due_at, remind_minutes, done, reminded_at, created_at`
+    : await sql()`INSERT INTO agenda (text, who, due_at, remind_minutes)
+        VALUES (${text}, ${who ?? null}, ${dueAt}::timestamptz, ${remindMinutes})
+        RETURNING id, text, who, due_at, remind_minutes, done, reminded_at, created_at`;
   // Replay d'un insert déjà reçu : renvoyer la ligne existante.
   if (rows.length === 0 && id) {
-    const existing = await sql()`SELECT id, text, due_at, remind_minutes, done, reminded_at, created_at FROM agenda WHERE id=${id}::uuid`;
+    const existing = await sql()`SELECT id, text, who, due_at, remind_minutes, done, reminded_at, created_at FROM agenda WHERE id=${id}::uuid`;
     return existing[0] as unknown as AgendaEvent;
   }
   return rows[0] as unknown as AgendaEvent;
 }
 
-export async function updateAgendaText(id: string, text: string): Promise<void> {
-  await sql()`UPDATE agenda SET text=${text} WHERE id=${id}`;
+export async function updateAgendaText(id: string, text: string, who: string | null): Promise<void> {
+  await sql()`UPDATE agenda SET text=${text}, who=${who} WHERE id=${id}`;
 }
 
 // Replanification → réarme le rappel (reminded_at repart à NULL).

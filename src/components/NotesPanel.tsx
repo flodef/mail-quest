@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { IconArrowBackUp, IconArrowLeft, IconChevronDown, IconClipboardCopy, IconCopyCheck, IconGripVertical, IconPlus, IconSkull, IconTrash, IconX } from "@tabler/icons-react";
 import ItemRow from "@/components/ItemRow";
 import Sheet from "@/components/Sheet";
+import RefreshButton from "@/components/RefreshButton";
 import SortableList, { type GripProps } from "@/components/SortableList";
 import { copyToClipboard } from "@/lib/clipboard";
 import { fmtShort } from "@/lib/dates";
@@ -202,7 +203,9 @@ function NoteCard({
 export default function NotesPanel({
   notes,
   busy,
+  refreshing,
   onClose,
+  onRefresh,
   onAdd,
   onDelete,
   onUpdate,
@@ -210,7 +213,9 @@ export default function NotesPanel({
 }: {
   notes: Note[];
   busy: boolean;
+  refreshing?: boolean;
   onClose: () => void;
+  onRefresh?: () => void;
   onAdd: (body: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, body: string) => void;
@@ -244,7 +249,10 @@ export default function NotesPanel({
     <Sheet onClose={onClose}>
       <div className="flex items-center justify-between">
         <div className="font-pixel text-[9px] text-[var(--gold-bright)]">📒 FOURRE-TOUT ({notes.length})</div>
-        <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
+        <div className="flex items-center gap-1.5">
+          {onRefresh && <RefreshButton onClick={onRefresh} spinning={refreshing} disabled={busy} />}
+          <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
+        </div>
       </div>
 
         {open ? (

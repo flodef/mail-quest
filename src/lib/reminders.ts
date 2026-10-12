@@ -31,8 +31,8 @@ async function sendReminder(ev: AgendaEvent, to: string): Promise<void> {
   if (!acc) throw new Error("aucun compte SMTP configuré");
   await sendMail(acc, {
     to,
-    subject: `⏰ Rappel : ${ev.text.replace(/[\r\n]+/g, " ")}`,
-    text: `${ev.text}\n\nPrévu le ${fmtWhen(ev.due_at)} (heure de Paris).\n\n— Mail Quest`,
+    subject: `⏰ Rappel : ${(ev.text + (ev.who ? ` avec ${ev.who}` : "")).replace(/[\r\n]+/g, " ")}`,
+    text: `${ev.text}${ev.who ? ` avec ${ev.who}` : ""}\n\nPrévu le ${fmtWhen(ev.due_at)} (heure de Paris).\n\n— Mail Quest`,
   });
 }
 

@@ -14,6 +14,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import InboxRow from "@/components/InboxRow";
+import RefreshButton from "@/components/RefreshButton";
 import { fmtShort } from "@/lib/dates";
 import Sheet from "@/components/Sheet";
 import SortableList from "@/components/SortableList";
@@ -31,7 +32,9 @@ export default function InboxDrawer({
   trash,
   busy,
   polling,
+  refreshing,
   onClose,
+  onRefresh,
   onOpen,
   onReorder,
   onAction,
@@ -48,6 +51,8 @@ export default function InboxDrawer({
   busy: boolean;
   /** Relevé manuel en cours (comptes "manual" : pas de polling auto). */
   polling?: boolean;
+  refreshing?: boolean;
+  onRefresh?: () => void;
   onClose: () => void;
   onOpen: (m: InboxItem) => void;
   onReorder: (next: InboxItem[]) => void;
@@ -71,7 +76,10 @@ export default function InboxDrawer({
     <Sheet onClose={onClose} panelClass="max-h-[70dvh]" onPanelClick={() => setMenuFor(null)}>
       <div className="flex justify-between items-center">
         <div className="font-pixel text-[9px]" style={{ color: inbox.color }}>{inbox.label}</div>
-        <button className="btn-pixel ghost !px-2" onClick={onClose}>✕</button>
+        <div className="flex items-center gap-1.5">
+          {onRefresh && <RefreshButton onClick={onRefresh} spinning={refreshing || polling} disabled={busy || polling} />}
+          <button className="btn-pixel ghost !px-2" onClick={onClose}>✕</button>
+        </div>
       </div>
       <SortableList
         items={items}
