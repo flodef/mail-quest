@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { IconArrowBackUp, IconCheck, IconChevronDown, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { IconCheck, IconChevronDown, IconPlus, IconSortAscending, IconSortDescending, IconX } from "@tabler/icons-react";
 import DateTimeInput from "@/components/DateTimeInput";
 import Sheet from "@/components/Sheet";
 import RefreshButton from "@/components/RefreshButton";
+import SwipeRow from "@/components/SwipeRow";
 import { fmtWhen, startOfToday } from "@/lib/dates";
 import type { AgendaEvent } from "@/lib/db";
 
@@ -56,6 +57,7 @@ function AgendaRow({
   const [draftWho, setDraftWho] = useState("");
   const [draftWhen, setDraftWhen] = useState<Date | null>(null);
   const [draftRemind, setDraftRemind] = useState(ev.remind_minutes);
+  const swiped = useRef(false);
   const past = +new Date(ev.due_at) < now;
 
   function save() {
@@ -74,23 +76,33 @@ function AgendaRow({
 
   if (ev.done) {
     return (
-      <div className="flex items-center gap-2 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a]">
-        <div className="flex-1 min-w-0">
+      <SwipeRow
+        onRight={() => !busy && onUndone(ev.id)}
+        onLeft={() => !busy && onDelete(ev.id)}
+        rightLabel="↺ RÉTABLIR"
+        leftLabel="☠ POTENCE"
+        dim
+        contentClassName="bg-[var(--shadow)] border border-[#3a5a2a]"
+      >
+        <div className="p-2.5">
           <div className="text-lg leading-snug break-words line-through">{ev.text}{ev.who ? ` avec ${ev.who}` : ""}</div>
           <div className="font-pixel text-[6px] opacity-60">{fmtWhen(ev.due_at, now)}</div>
         </div>
-        <button className="shrink-0 opacity-70 hover:opacity-100" disabled={busy} title="Remettre dans les prophéties" onClick={() => onUndone(ev.id)}>
-          <IconArrowBackUp size={16} />
-        </button>
-        <button className="shrink-0 opacity-70 hover:opacity-100" disabled={busy} title="Jeter à la potence" onClick={() => onDelete(ev.id)}>
-          <IconTrash size={16} />
-        </button>
-      </div>
+      </SwipeRow>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2 bg-[var(--shadow)] p-2.5 border border-[#3a5a2a]">
+    <SwipeRow
+      onRight={() => !busy && onDone(ev.id)}
+      onLeft={() => !busy && onDelete(ev.id)}
+      rightLabel="⚔ FAITE"
+      leftLabel="☠ POTENCE"
+      swipedRef={swiped}
+      disabled={editing || editingWhen}
+      contentClassName="bg-[var(--shadow)] border border-[#3a5a2a]"
+    >
+      <div className="p-2.5 flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           {editing ? (
@@ -120,7 +132,9 @@ function AgendaRow({
           ) : (
             <div
               className="text-lg leading-snug break-words cursor-text"
+              onPointerDown={() => (swiped.current = false)}
               onClick={() => {
+                if (swiped.current) return;
                 setDraft(ev.text);
                 setDraftWho(ev.who ?? "");
                 setEditing(true);
@@ -134,7 +148,9 @@ function AgendaRow({
             className={`font-pixel text-[6px] mt-0.5 text-left ${past ? "text-[var(--ruby)]" : "opacity-60 hover:opacity-100"}`}
             disabled={busy}
             title="Modifier la date / le rappel"
+            onPointerDown={() => (swiped.current = false)}
             onClick={() => {
+              if (swiped.current) return;
               setDraftWhen(new Date(ev.due_at));
               setDraftRemind(ev.remind_minutes);
               setEditingWhen((v) => !v);
@@ -143,22 +159,13 @@ function AgendaRow({
             {fmtWhen(ev.due_at, now)} · 🔔 {remindLabel(ev.remind_minutes)} AVANT
           </button>
         </div>
-        {editing ? (
+        {editing && (
           <>
             <button className="btn-pixel !p-1.5 shrink-0" disabled={busy} title="Valider" onClick={save}>
               <IconCheck size={16} />
             </button>
             <button className="btn-pixel ghost !p-1.5 shrink-0" disabled={busy} title="Annuler" onClick={() => setEditing(false)}>
               <IconX size={16} />
-            </button>
-          </>
-        ) : (
-          <>
-            <button className="btn-pixel ghost !p-1.5 shrink-0" disabled={busy} title="Fait" onClick={() => onDone(ev.id)}>
-              <IconCheck size={16} />
-            </button>
-            <button className="btn-pixel danger !p-1.5 shrink-0" disabled={busy} title="Jeter à la potence" onClick={() => onDelete(ev.id)}>
-              <IconTrash size={16} />
             </button>
           </>
         )}
@@ -179,7 +186,8 @@ function AgendaRow({
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </SwipeRow>
   );
 }
 
@@ -215,6 +223,7 @@ export default function AgendaPanel({
   const [when, setWhen] = useState<Date | null>(null);
   const [remind, setRemind] = useState(30);
   const [showDone, setShowDone] = useState(false);
+  const [sortAsc, setSortAsc] = useState(true);
   // Jour mini pour le calendrier : fixé au mount du panneau (toujours monté).
   const [min] = useState(startOfToday);
   // Horloge locale (rafraîchie toutes les 30 s, seulement quand le panneau
@@ -226,7 +235,9 @@ export default function AgendaPanel({
     return () => clearInterval(t);
   }, [open]);
 
-  const upcoming = events.filter((e) => !e.done).sort((a, b) => +new Date(a.due_at) - +new Date(b.due_at));
+  const upcoming = events
+    .filter((e) => !e.done)
+    .sort((a, b) => (+new Date(a.due_at) - +new Date(b.due_at)) * (sortAsc ? 1 : -1));
   const done = events.filter((e) => e.done).sort((a, b) => +new Date(b.due_at) - +new Date(a.due_at));
 
   function submit() {
@@ -244,6 +255,13 @@ export default function AgendaPanel({
       <div className="flex items-center justify-between">
         <div className="font-pixel text-[9px] text-[var(--gold-bright)]">🔮 PROPHÉTIES ({upcoming.length})</div>
         <div className="flex items-center gap-1.5">
+          <button
+            className="btn-pixel ghost !px-2"
+            onClick={() => setSortAsc((v) => !v)}
+            title={sortAsc ? "Du plus proche au plus lointain" : "Du plus lointain au plus proche"}
+          >
+            {sortAsc ? <IconSortAscending size={18} /> : <IconSortDescending size={18} />}
+          </button>
           {onRefresh && <RefreshButton onClick={onRefresh} spinning={refreshing} disabled={busy} />}
           <button className="btn-pixel ghost !px-2" onClick={onClose}><IconX size={18} /></button>
         </div>
@@ -288,7 +306,7 @@ export default function AgendaPanel({
         ))}
       </div>
       {upcoming.length > 0 && (
-        <div className="font-pixel text-[6px] opacity-50 text-center">TOUCHER LE TEXTE OU LA DATE POUR ÉDITER</div>
+        <div className="font-pixel text-[6px] opacity-50 text-center">◀ POTENCE · FAITE ▶ · TOUCHER TEXTE OU DATE POUR ÉDITER</div>
       )}
 
       {done.length > 0 && (
