@@ -8,6 +8,7 @@ import RefreshButton from "@/components/RefreshButton";
 import SortableList, { type GripProps } from "@/components/SortableList";
 import { copyToClipboard } from "@/lib/clipboard";
 import { fmtShort } from "@/lib/dates";
+import { findSimilar } from "@/lib/similar";
 import { parseNoteItems, serializeNoteItems, type NoteItem } from "@/lib/items";
 import type { Note } from "@/lib/db";
 
@@ -57,9 +58,25 @@ function NoteDetail({
     onUpdate(note.id, serializeNoteItems(next));
   }
 
+  // Anti quasi-doublon : ressemble à un item actif → demande confirm inline.
+  const [dupAsk, setDupAsk] = useState<{ text: string; match: string } | null>(null);
+
   function submit() {
     const t = input.trim();
     if (!t) return;
+    const match = findSimilar(t, active.map((i) => i.text));
+    if (match) {
+      setDupAsk({ text: t, match });
+      return;
+    }
+    setInput("");
+    save([...active, { id: `n${++idCounter.current}`, text: t, done: false }, ...done]);
+  }
+
+  function submitAnyway() {
+    if (!dupAsk) return;
+    const t = dupAsk.text;
+    setDupAsk(null);
     setInput("");
     save([...active, { id: `n${++idCounter.current}`, text: t, done: false }, ...done]);
   }
@@ -117,6 +134,16 @@ function NoteDetail({
         />
         <button className="btn-pixel !px-3" disabled={busy || !input.trim()} onClick={submit}><IconPlus size={18} /></button>
       </div>
+
+      {dupAsk && (
+        <div className="flex items-center gap-2 bg-[var(--shadow)] border border-[var(--gold)] p-2 text-base">
+          <div className="flex-1 min-w-0">
+            « {dupAsk.text} » ressemble à « {dupAsk.match} » — ajouter quand même ?
+          </div>
+          <button className="btn-pixel !py-1 !px-2 text-[8px] shrink-0" disabled={busy} onClick={submitAnyway}>Oui</button>
+          <button className="btn-pixel ghost !py-1 !px-2 text-[8px] shrink-0" disabled={busy} onClick={() => setDupAsk(null)}>Non</button>
+        </div>
+      )}
 
       <SortableList
         items={active}

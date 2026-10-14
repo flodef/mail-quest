@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import { IconRefresh, IconBell, IconBellOff, IconPackage, IconDeviceMobileDown, IconVolumeOff, IconWand, IconTrash, IconX, IconSword, IconArrowBackUp, IconNotebook, IconWifiOff, IconCalendarClock, IconSkull } from "@tabler/icons-react";
 import { apiError } from "@/lib/client";
+import { findSimilar } from "@/lib/similar";
 import { useAppBadge, useInstallPrompt, useOfflineSync, usePush, useToast, type Snapshot } from "@/lib/hooks";
 import type { AgendaEvent, Note, Task } from "@/lib/db";
 import type { Draft, DraftBody, InboxItem, MsgBody, OverviewAccount } from "@/lib/types";
@@ -257,11 +258,28 @@ export default function Game() {
       .map((l) => l.replace(/^[•\-–—*]\s*/, "").trim())
       .filter(Boolean);
     if (!lines.length) return;
-    const now = new Date().toISOString();
-    const base = Math.min(0, ...tasks.map((x) => x.position)) - lines.length;
-    const news = lines.map((t, i) => ({ id: crypto.randomUUID(), text: t, done: false, position: base + i, created_at: now }));
-    setTasks((ts) => sortTasks([...ts, ...news]));
-    mutate({ url: "/api/tasks", init: json({ texts: news.map(({ text, id }) => ({ text, id })) }) });
+    // Anti quasi-doublon : ressemble à une quête active → confirm avant d'ajouter.
+    const candidates = tasks.filter((t) => !t.done).map((t) => t.text);
+    const dups = lines.map((l) => ({ l, match: findSimilar(l, candidates) })).filter((d): d is { l: string; match: string } => d.match !== null);
+    const clean = lines.filter((l) => !dups.some((d) => d.l === l));
+
+    const add = (texts: string[]) => {
+      if (!texts.length) return;
+      const now = new Date().toISOString();
+      const base = Math.min(0, ...tasks.map((x) => x.position)) - texts.length;
+      const news = texts.map((t, i) => ({ id: crypto.randomUUID(), text: t, done: false, position: base + i, created_at: now }));
+      setTasks((ts) => sortTasks([...ts, ...news]));
+      mutate({ url: "/api/tasks", init: json({ texts: news.map(({ text, id }) => ({ text, id })) }) });
+    };
+
+    add(clean);
+    if (dups.length) {
+      const extra = dups.length > 1 ? ` (+${dups.length - 1} autre(s))` : "";
+      setConfirm({
+        label: `« ${dups[0].l.slice(0, 60)} » ressemble à « ${dups[0].match.slice(0, 60)} »${extra} — ajouter quand même ?`,
+        run: () => add(dups.map((d) => d.l)),
+      });
+    }
   }
 
   function questDone(id: string) {
